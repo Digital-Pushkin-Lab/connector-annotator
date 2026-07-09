@@ -1,0 +1,2 @@
+# connector-annotator
+Аннотатор коннекторов

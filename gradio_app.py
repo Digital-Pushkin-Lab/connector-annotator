@@ -14,13 +14,28 @@ Expanded features:
 """
 
 import json
-import os
 import re
 import uuid
 import xml.dom.minidom
 from datetime import datetime
 from typing import Dict, List, Set, Tuple
 from xml.etree import ElementTree as ET
+import os
+
+# Remove ALL_PROXY and all_proxy BEFORE anything else
+os.environ.pop("ALL_PROXY", None)
+os.environ.pop("all_proxy", None)
+
+# Also clear the others to be safe
+os.environ.pop("HTTP_PROXY", None)
+os.environ.pop("http_proxy", None)
+os.environ.pop("HTTPS_PROXY", None)
+os.environ.pop("https_proxy", None)
+os.environ.pop("FTP_PROXY", None)
+os.environ.pop("ftp_proxy", None)
+
+# Keep no_proxy/NO_PROXY for localhost bypass
+# os.environ["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
 
 import gradio as gr
 
@@ -70,6 +85,14 @@ CSS = """
 .manual:hover {
     background-color: rgba(100, 160, 230, 0.65) !important;
 }
+.scrollable-table {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 0.5rem;
+    background: #ffffff;
+}
 """
 
 JSON_PATH = os.path.join(os.path.dirname(__file__), "nested_linkers.json")
@@ -84,6 +107,7 @@ def load_linker_data(path: str):
       - cont_by_first:  first_word -> [(dict_form, [words])]
       - disc_by_first:  first_word -> [(dict_form, [[words], ...])]
       - atom_map:       dict_form -> set of atom_dict_forms
+      - semfield_map:   dict_form -> list of unique semfield values
     """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -91,6 +115,8 @@ def load_linker_data(path: str):
     cont_by_first: Dict[str, List[Tuple[str, List[str]]]] = {}
     disc_by_first: Dict[str, List[Tuple[str, List[List[str]]]]] = {}
     atom_map: Dict[str, Set[str]] = {}
+    semfield_map: Dict[str, List[str]] = {}
+    all_semfields: Set[str] = set()
 
     for key, value in data.items():
         atoms: Set[str] = set()
@@ -99,6 +125,18 @@ def load_linker_data(path: str):
                 atoms.add(atom_key)
         if atoms:
             atom_map[key] = atoms
+
+        # merge semfield1 and semfield2, preserving order, removing duplicates
+        semfields: List[str] = []
+        seen_semfields: Set[str] = set()
+        for field in ("semfield1", "semfield2"):
+            for sf in value.get(field, []) or []:
+                if sf and sf not in seen_semfields:
+                    seen_semfields.add(sf)
+                    semfields.append(sf)
+                    all_semfields.add(sf)
+        if semfields:
+            semfield_map[key] = semfields
 
         if "..." in key:
             raw_parts = [p.strip() for p in key.split("...")]
@@ -112,10 +150,12 @@ def load_linker_data(path: str):
                 fw = words[0].lower()
                 cont_by_first.setdefault(fw, []).append((key, words))
 
-    return cont_by_first, disc_by_first, atom_map
+    return cont_by_first, disc_by_first, atom_map, semfield_map, sorted(all_semfields)
 
 
-CONT_BY_FIRST, DISC_BY_FIRST, ATOM_MAP = load_linker_data(JSON_PATH)
+CONT_BY_FIRST, DISC_BY_FIRST, ATOM_MAP, SEMFIELD_MAP, _RAW_SEMFIELD_CHOICES = load_linker_data(JSON_PATH)
+SEMFIELD_CHOICES = ["не выбрано"] + _RAW_SEMFIELD_CHOICES
+NO_SEMFIELD = "не выбрано"
 
 # ---------------------------------------------------------------------------
 # Tokenization
@@ -271,13 +311,14 @@ def greedy_resolve(matches: List[Match]) -> List[Tuple[int, int, str]]:
 Highlight = Dict[str, object]
 
 
-def make_highlight(start: int, end: int, label: str, source: str) -> Highlight:
+def make_highlight(start: int, end: int, label: str, source: str, semfield: List[str] = None) -> Highlight:
     return {
         "id": str(uuid.uuid4())[:8],
         "start": start,
         "end": end,
         "label": label,
         "source": source,
+        "semfield": list(semfield) if semfield else [],
     }
 
 
@@ -442,6 +483,7 @@ def build_xml(text: str, highlights: List[Highlight]) -> str:
         el.set("start", str(node["start"]))
         el.set("end", str(node["end"]))
         el.set("label", str(node["label"]))
+        el.set("semfield", _semfield_str(node))
         el.set("source", str(node["source"]))
         surface = text[node["start"]:node["end"]]
         el.set("surface", surface)
@@ -477,25 +519,74 @@ def choice_str(h: Highlight, text: str) -> str:
     return f"{h['id']}: [{h['start']}-{h['end']}] \"{h['label']}\" ({preview})"
 
 
+def _normalize_semfield(semfield: str) -> List[str]:
+    """Convert a raw semfield dropdown value into a list of values."""
+    if not semfield or str(semfield).strip() == NO_SEMFIELD:
+        return []
+    return [sf.strip() for sf in str(semfield).split(",") if sf.strip() and sf.strip() != NO_SEMFIELD]
+
+
+def _semfield_str(h: Highlight) -> str:
+    values = h.get("semfield", [])
+    return ", ".join(values) if values else ""
+
+
+def _semfield_display_value(values: List[str]) -> str:
+    return ", ".join(values) if values else NO_SEMFIELD
+
+
 def highlights_to_table(highlights: List[Highlight], text: str) -> str:
     """Render highlights as a Markdown table string."""
     if not highlights:
         return "_Разметка отсутствует_"
     rows = []
-    rows.append("| id | start | end | label | source | text |")
-    rows.append("|---|---|---|---|---|---|")
+    rows.append("| id | start | end | название коннектора | semfield | source | текст |")
+    rows.append("|---|---|---|---|---|---|---|")
     for h in sorted(highlights, key=lambda x: (x["start"], -x["end"])):
         surface = text[h["start"]:h["end"]].replace("|", "\\|").replace("\n", " ")
         rows.append(
-            f"| {h['id']} | {h['start']} | {h['end']} | {h['label']} | {h['source']} | {surface} |"
+            f"| {h['id']} | {h['start']} | {h['end']} | {h['label']} | {_semfield_display_value(h.get('semfield', []))} | {h['source']} | {surface} |"
         )
     return "\n".join(rows)
 
 
+def compute_stats(highlights: List[Highlight]) -> str:
+    """Return Markdown with connector statistics."""
+    if not highlights:
+        return "_Нет данных для статистики_"
+
+    tree = build_tree(highlights)
+    roots = tree
+
+    def count_atoms(node: Highlight) -> int:
+        children = node.get("children", [])
+        return len(children) + sum(count_atoms(child) for child in children)
+
+    total_connectors = len(roots)
+    total_atoms = sum(count_atoms(root) for root in roots)
+
+    group_counts: Dict[str, int] = {}
+    group_atoms: Dict[str, int] = {}
+    for root in roots:
+        root_atom_count = count_atoms(root)
+        for sf in root.get("semfield", []):
+            group_counts[sf] = group_counts.get(sf, 0) + 1
+            group_atoms[sf] = group_atoms.get(sf, 0) + root_atom_count
+
+    lines = [f"**Всего коннекторов:** {total_connectors} (атомов: {total_atoms})"]
+    if group_counts:
+        lines.append("")
+        lines.append("**По семантическим группам:**")
+        for sf in sorted(group_counts.keys()):
+            lines.append(f"- {sf}: {group_counts[sf]} (атомов: {group_atoms.get(sf, 0)})")
+    return "\n".join(lines)
+
+
 def render_state(text: str, highlights: List[Highlight], selected_id: str = ""):
-    """Return updated HTML, table, and dropdown for a given state."""
+    """Return updated HTML, table, dropdown, and stats for a given state."""
     html = build_html(text, highlights)
     table = highlights_to_table(highlights, text)
+    stats = compute_stats(highlights)
     choices = [choice_str(h, text) for h in sorted(highlights, key=lambda x: (x["start"], -x["end"]))]
     selected_value = ""
     if selected_id:
@@ -503,7 +594,7 @@ def render_state(text: str, highlights: List[Highlight], selected_id: str = ""):
             if h["id"] == selected_id:
                 selected_value = choice_str(h, text)
                 break
-    return html, table, gr.update(choices=choices, value=selected_value)
+    return html, table, gr.update(choices=choices, value=selected_value), stats
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +607,7 @@ def analyze_text(text: str):
             '<div class="linker-container">Введите текст для анализа…</div>',
             "_Разметка отсутствует_",
             gr.update(choices=[], value=""),
+            "_Нет данных для статистики_",
             text,
             [],
             "",
@@ -523,12 +615,12 @@ def analyze_text(text: str):
     matches = find_all_matches(text)
     flat = greedy_resolve(matches)
     flat = deduplicate_flat(flat)
-    highlights = [make_highlight(s, e, key, "auto") for s, e, key in flat]
-    html, table, dropdown = render_state(text, highlights)
-    return html, table, dropdown, text, highlights, f"Найдено разметок: {len(highlights)}"
+    highlights = [make_highlight(s, e, key, "auto", SEMFIELD_MAP.get(key, [])) for s, e, key in flat]
+    html, table, dropdown, stats = render_state(text, highlights)
+    return html, table, dropdown, stats, text, highlights, f"Найдено разметок: {len(highlights)}"
 
 
-def add_by_position(text: str, highlights: List[Highlight], start, end, label: str):
+def add_by_position(text: str, highlights: List[Highlight], start, end, label: str, semfield: str):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
     try:
@@ -540,35 +632,37 @@ def add_by_position(text: str, highlights: List[Highlight], start, end, label: s
     if not (0 <= start < end <= len(text)):
         return (*render_state(text, highlights), highlights, "Позиции выходят за границы текста.")
     if not label or not str(label).strip():
-        return (*render_state(text, highlights), highlights, "Укажите метку.")
+        return (*render_state(text, highlights), highlights, "Укажите название коннектора.")
 
-    new_hl = make_highlight(start, end, str(label).strip(), "manual")
+    semfield_list = _normalize_semfield(semfield)
+    new_hl = make_highlight(start, end, str(label).strip(), "manual", semfield_list)
     new_highlights = highlights + [new_hl]
     ok, msg = validate_highlights(new_highlights)
     if not ok:
         return (*render_state(text, highlights), highlights, msg)
 
-    html, table, dropdown = render_state(text, new_highlights, selected_id=new_hl["id"])
-    return html, table, dropdown, new_highlights, "Разметка добавлена."
+    html, table, dropdown, stats = render_state(text, new_highlights, selected_id=new_hl["id"])
+    return html, table, dropdown, stats, new_highlights, "Разметка добавлена."
 
 
-def add_by_phrase(text: str, highlights: List[Highlight], phrase: str, label: str):
+def add_by_phrase(text: str, highlights: List[Highlight], phrase: str, label: str, semfield: str):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
     if not phrase or not phrase.strip():
         return (*render_state(text, highlights), highlights, "Введите фразу.")
     if not label or not str(label).strip():
-        return (*render_state(text, highlights), highlights, "Укажите метку.")
+        return (*render_state(text, highlights), highlights, "Укажите название коннектора.")
 
     positions = find_phrase_positions(text, phrase.strip())
     if not positions:
         return (*render_state(text, highlights), highlights, "Фраза не найдена.")
 
+    semfield_list = _normalize_semfield(semfield)
     new_highlights = list(highlights)
     added_ids = []
     label_clean = str(label).strip()
     for s, e in positions:
-        new_hl = make_highlight(s, e, label_clean, "manual")
+        new_hl = make_highlight(s, e, label_clean, "manual", semfield_list)
         test = new_highlights + [new_hl]
         ok, _ = validate_highlights(test)
         if ok:
@@ -579,8 +673,8 @@ def add_by_phrase(text: str, highlights: List[Highlight], phrase: str, label: st
         return (*render_state(text, highlights), highlights, "Не удалось добавить ни одной разметки (возможны пересечения).")
 
     selected_id = added_ids[-1]
-    html, table, dropdown = render_state(text, new_highlights, selected_id=selected_id)
-    return html, table, dropdown, new_highlights, f"Добавлено разметок: {len(added_ids)}."
+    html, table, dropdown, stats = render_state(text, new_highlights, selected_id=selected_id)
+    return html, table, dropdown, stats, new_highlights, f"Добавлено разметок: {len(added_ids)}."
 
 
 def _selected_id_from_choice(choice: str) -> str:
@@ -592,14 +686,15 @@ def _selected_id_from_choice(choice: str) -> str:
 def on_select_highlight(text: str, highlights: List[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
-        return gr.update(), gr.update(), gr.update()
+        return gr.update(), gr.update(), gr.update(), gr.update()
     for h in highlights:
         if h["id"] == hid:
-            return h["start"], h["end"], h["label"]
-    return gr.update(), gr.update(), gr.update()
+            semfield_value = _semfield_display_value(h.get("semfield", []))
+            return h["start"], h["end"], h["label"], semfield_value
+    return gr.update(), gr.update(), gr.update(), gr.update()
 
 
-def update_highlight(text: str, highlights: List[Highlight], choice: str, start, end, label: str):
+def update_highlight(text: str, highlights: List[Highlight], choice: str, start, end, label: str, semfield: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
         return (*render_state(text, highlights), highlights, "Выберите разметку для изменения.")
@@ -613,6 +708,8 @@ def update_highlight(text: str, highlights: List[Highlight], choice: str, start,
     if not (0 <= start < end <= len(text)):
         return (*render_state(text, highlights), highlights, "Позиции выходят за границы текста.")
 
+    semfield_list = _normalize_semfield(semfield)
+
     new_highlights = []
     found = False
     for h in highlights:
@@ -621,6 +718,7 @@ def update_highlight(text: str, highlights: List[Highlight], choice: str, start,
             new_h["start"] = start
             new_h["end"] = end
             new_h["label"] = str(label).strip() if label and str(label).strip() else h["label"]
+            new_h["semfield"] = semfield_list
             new_highlights.append(new_h)
             found = True
         else:
@@ -633,8 +731,8 @@ def update_highlight(text: str, highlights: List[Highlight], choice: str, start,
     if not ok:
         return (*render_state(text, highlights), highlights, msg)
 
-    html, table, dropdown = render_state(text, new_highlights, selected_id=hid)
-    return html, table, dropdown, new_highlights, "Разметка изменена."
+    html, table, dropdown, stats = render_state(text, new_highlights, selected_id=hid)
+    return html, table, dropdown, stats, new_highlights, "Разметка изменена."
 
 
 def delete_highlight(text: str, highlights: List[Highlight], choice: str):
@@ -644,8 +742,8 @@ def delete_highlight(text: str, highlights: List[Highlight], choice: str):
     new_highlights = [h for h in highlights if h["id"] != hid]
     if len(new_highlights) == len(highlights):
         return (*render_state(text, highlights), highlights, "Разметка не найдена.")
-    html, table, dropdown = render_state(text, new_highlights)
-    return html, table, dropdown, new_highlights, "Разметка удалена."
+    html, table, dropdown, stats = render_state(text, new_highlights)
+    return html, table, dropdown, stats, new_highlights, "Разметка удалена."
 
 
 # ---------------------------------------------------------------------------
@@ -658,7 +756,7 @@ def main():
         gr.Markdown(
             "Вставьте текст на русском языке и нажмите **Анализировать**. "
             "Найденные коннекторы будут подсвечены оранжевым, ручная разметка — синим. "
-            "Наведите курсор на фрагмент, чтобы увидеть метку."
+            "Наведите курсор на фрагмент, чтобы увидеть название коннектора."
         )
 
         state_text = gr.State("")
@@ -678,21 +776,39 @@ def main():
                     with gr.TabItem("По позициям"):
                         add_start = gr.Number(label="Начало (символ)", precision=0, minimum=0)
                         add_end = gr.Number(label="Конец (символ)", precision=0, minimum=0)
-                        add_label_pos = gr.Textbox(label="Метка", placeholder="например, союз")
+                        add_label_pos = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
+                        add_semfield_pos = gr.Dropdown(
+                            label="Семантическая группа (semfield)",
+                            choices=SEMFIELD_CHOICES,
+                            value=NO_SEMFIELD,
+                            allow_custom_value=True,
+                        )
                         add_pos_btn = gr.Button("Добавить разметку")
 
                     with gr.TabItem("По фразе"):
                         add_phrase = gr.Textbox(label="Фраза", placeholder="Введите точную фразу из текста")
-                        add_label_phrase = gr.Textbox(label="Метка", placeholder="например, обстоятельство")
+                        add_label_phrase = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
+                        add_semfield_phrase = gr.Dropdown(
+                            label="Семантическая группа (semfield)",
+                            choices=SEMFIELD_CHOICES,
+                            value=NO_SEMFIELD,
+                            allow_custom_value=True,
+                        )
                         add_phrase_btn = gr.Button("Найти и добавить")
 
                 gr.Markdown("### Изменить или удалить")
                 hl_select = gr.Dropdown(label="Выбранная разметка", choices=[])
                 edit_start = gr.Number(label="Начало", precision=0, minimum=0)
                 edit_end = gr.Number(label="Конец", precision=0, minimum=0)
-                edit_label = gr.Textbox(label="Метка")
+                edit_label = gr.Textbox(label="Название коннектора")
+                edit_semfield = gr.Dropdown(
+                    label="Семантическая группа (semfield)",
+                    choices=SEMFIELD_CHOICES,
+                    value=NO_SEMFIELD,
+                    allow_custom_value=True,
+                )
                 with gr.Row():
-                    update_btn = gr.Button("Изменить границы / метку")
+                    update_btn = gr.Button("Изменить границы / название / группу")
                     delete_btn = gr.Button("Удалить разметку", variant="stop")
 
                 save_btn = gr.Button("Сохранить разметку как XML", variant="secondary")
@@ -710,7 +826,8 @@ def main():
 
             with gr.Column(scale=1):
                 output_html = gr.HTML(label="Размеченный текст")
-                output_table = gr.Markdown(label="Текущая разметка")
+                output_table = gr.Markdown(label="Текущая разметка", elem_classes="scrollable-table")
+                output_stats = gr.Markdown(label="Статистика")
                 output_file = gr.File(label="XML-файл")
                 msg_box = gr.Textbox(label="Сообщения", interactive=False)
 
@@ -718,37 +835,37 @@ def main():
         analyze_btn.click(
             fn=analyze_text,
             inputs=input_box,
-            outputs=[output_html, output_table, hl_select, state_text, state_highlights, msg_box],
+            outputs=[output_html, output_table, hl_select, output_stats, state_text, state_highlights, msg_box],
         )
 
         add_pos_btn.click(
             fn=add_by_position,
-            inputs=[state_text, state_highlights, add_start, add_end, add_label_pos],
-            outputs=[output_html, output_table, hl_select, state_highlights, msg_box],
+            inputs=[state_text, state_highlights, add_start, add_end, add_label_pos, add_semfield_pos],
+            outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
 
         add_phrase_btn.click(
             fn=add_by_phrase,
-            inputs=[state_text, state_highlights, add_phrase, add_label_phrase],
-            outputs=[output_html, output_table, hl_select, state_highlights, msg_box],
+            inputs=[state_text, state_highlights, add_phrase, add_label_phrase, add_semfield_phrase],
+            outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
 
         hl_select.change(
             fn=on_select_highlight,
             inputs=[state_text, state_highlights, hl_select],
-            outputs=[edit_start, edit_end, edit_label],
+            outputs=[edit_start, edit_end, edit_label, edit_semfield],
         )
 
         update_btn.click(
             fn=update_highlight,
-            inputs=[state_text, state_highlights, hl_select, edit_start, edit_end, edit_label],
-            outputs=[output_html, output_table, hl_select, state_highlights, msg_box],
+            inputs=[state_text, state_highlights, hl_select, edit_start, edit_end, edit_label, edit_semfield],
+            outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
 
         delete_btn.click(
             fn=delete_highlight,
             inputs=[state_text, state_highlights, hl_select],
-            outputs=[output_html, output_table, hl_select, state_highlights, msg_box],
+            outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
 
         save_btn.click(

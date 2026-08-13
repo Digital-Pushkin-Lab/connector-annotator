@@ -657,7 +657,7 @@ def render_state(text: str, highlights: List[Highlight], selected_id: str = ""):
     table = highlights_to_table(highlights, text)
     stats = compute_stats(highlights)
     choices = [choice_str(h, text) for h in sorted(highlights, key=lambda x: (x["start"], -x["end"]))]
-    selected_value = ""
+    selected_value = None
     if selected_id:
         for h in highlights:
             if h["id"] == selected_id:
@@ -675,7 +675,7 @@ def analyze_text(text: str):
         return (
             '<div class="linker-container">Введите текст для анализа…</div>',
             "_Разметка отсутствует_",
-            gr.update(choices=[], value=""),
+            gr.update(choices=[], value=None),
             "_Нет данных для статистики_",
             text,
             [],

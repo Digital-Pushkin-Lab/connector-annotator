@@ -1024,7 +1024,7 @@ def main():
             outputs=[output_file, msg_box],
         )
 
-    demo.launch(share=False)
+    demo.launch(share=True)
 
 
 if __name__ == "__main__":

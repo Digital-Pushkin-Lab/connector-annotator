@@ -1,0 +1,6 @@
+gradio
+pandas
+stanza
+razdel
+tqdm
+openpyxl

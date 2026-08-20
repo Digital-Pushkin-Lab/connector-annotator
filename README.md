@@ -1,3 +1,38 @@
 # Аннотатор коннекторов
 
-Эта ветка оптимизирована для работы на Google Colab.
+Эта ветка оптимизирована для работы на Google Colab (Python 3.12.13).
+
+Начиная с этой версии `gradio_app.py` использует синтаксис встроенных
+générик-типов (`list[str]`, `dict[str, int]` и т. п., PEP 585) вместо
+`typing.List`/`typing.Dict`, поэтому требует **Python 3.9 или новее**
+(в отличие от ветки `main`, которая по-прежнему ориентирована на
+Python 3.8).
+
+## Установка
+
+Автоматическая разметка линкеров и вводных слов использует движок из
+[`linker_extraction`](https://github.com/Digital-Pushkin-Lab/connector-extractor),
+подключённого как git submodule.
+
+```python
+!git clone --recurse-submodules -b colab-compatible \
+    https://github.com/Digital-Pushkin-Lab/connector-annotator.git
+%cd connector-annotator
+
+!pip install -r requirements.txt
+!python -c "import stanza; stanza.download('ru')"   # разовая загрузка модели
+
+!python3 gradio_app.py
+```
+
+`demo.launch(share=True)` уже включён, поэтому Gradio выдаст публичную
+ссылку — по ней и открывайте интерфейс из Colab.
+
+## Известное ограничение
+
+Правки в этой ветке (включая переход на `linker_extraction` и синтаксис
+PEP 585) были сделаны и проверены на Python 3.7–3.9 — здесь не было
+доступа к интерпретатору 3.12, поэтому сама совместимость с Python
+3.12.13 и с той версией Gradio, которую `pip` поставит на Colab на
+момент установки, не была протестирована вживую. Если что-то не
+запустится — пришлите сообщение об ошибке.

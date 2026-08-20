@@ -14,11 +14,10 @@ Expanded features:
 """
 
 import json
-import re
+import sys
 import uuid
 import xml.dom.minidom
 from datetime import datetime
-from typing import Dict, List, Set, Tuple
 from xml.etree import ElementTree as ET
 import os
 
@@ -38,6 +37,13 @@ os.environ.pop("ftp_proxy", None)
 # os.environ["NO_PROXY"] = "localhost,127.0.0.0/8,::1"
 
 import gradio as gr
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "linker_extraction"))
+
+import stanza  # noqa: E402
+from extract import load_patterns  # noqa: E402
+from pipeline import extract_spans, parse_sentences  # noqa: E402
+from rules import build_default_checker  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Styling
@@ -85,6 +91,13 @@ CSS = """
 .manual:hover {
     background-color: rgba(100, 160, 230, 0.65) !important;
 }
+.intro {
+    background-color: rgba(120, 170, 90, 0.35) !important;
+    border-color: rgba(80, 130, 50, 0.5) !important;
+}
+.intro:hover {
+    background-color: rgba(120, 170, 90, 0.65) !important;
+}
 .scrollable-table {
     max-height: 400px;
     overflow-y: auto;
@@ -103,10 +116,9 @@ JSON_PATH = os.path.join(os.path.dirname(__file__), "nested_linkers.json")
 
 def load_linker_data(path: str):
     """
-    Load nested_linkers.json and return:
-      - cont_by_first:    first_word -> [(dict_form, [words])]
-      - disc_by_first:    first_word -> [(dict_form, [[words], ...])]
-      - atom_map:         dict_form -> set of atom dict_forms
+    Load nested_linkers.json and return, keyed by dict_form (the same
+    surface-string convention -- "..." for discontinuous connectors -- used
+    by linker_extraction's matches):
       - semfield1_map:    dict_form -> list of primary-meaning alternatives
       - semfield2_map:    dict_form -> list of obligatory accompanying meanings
       - pragmatics_map:   dict_form -> list of obligatory pragmatic meanings
@@ -114,21 +126,14 @@ def load_linker_data(path: str):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    cont_by_first: Dict[str, List[Tuple[str, List[str]]]] = {}
-    disc_by_first: Dict[str, List[Tuple[str, List[List[str]]]]] = {}
-    atom_map: Dict[str, Set[str]] = {}
-    semfield1_map: Dict[str, List[str]] = {}
-    semfield2_map: Dict[str, List[str]] = {}
-    pragmatics_map: Dict[str, List[str]] = {}
-    all_semfield1: Set[str] = set()
-    all_semfield2: Set[str] = set()
-    all_pragmatics: Set[str] = set()
+    semfield1_map: dict[str, list[str]] = {}
+    semfield2_map: dict[str, list[str]] = {}
+    pragmatics_map: dict[str, list[str]] = {}
+    all_semfield1: set[str] = set()
+    all_semfield2: set[str] = set()
+    all_pragmatics: set[str] = set()
 
     for key, value in data.items():
-        atoms = value.get("atoms") or []
-        if atoms:
-            atom_map[key] = set(atoms)
-
         semfield1 = value.get("semfield1") or []
         if semfield1:
             semfield1_map[key] = list(semfield1)
@@ -144,22 +149,7 @@ def load_linker_data(path: str):
             pragmatics_map[key] = list(pragmatics)
             all_pragmatics.update(pragmatics)
 
-        if "..." in key:
-            raw_parts = [p.strip() for p in key.split("...")]
-            word_parts = [p.split() for p in raw_parts if p.strip()]
-            if word_parts and word_parts[0]:
-                fw = word_parts[0][0].lower()
-                disc_by_first.setdefault(fw, []).append((key, word_parts))
-        else:
-            words = key.split()
-            if words:
-                fw = words[0].lower()
-                cont_by_first.setdefault(fw, []).append((key, words))
-
     return (
-        cont_by_first,
-        disc_by_first,
-        atom_map,
         semfield1_map,
         semfield2_map,
         pragmatics_map,
@@ -170,9 +160,6 @@ def load_linker_data(path: str):
 
 
 (
-    CONT_BY_FIRST,
-    DISC_BY_FIRST,
-    ATOM_MAP,
     SEMFIELD1_MAP,
     SEMFIELD2_MAP,
     PRAGMATICS_MAP,
@@ -186,158 +173,53 @@ SEMFIELD1_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD1_CHOICES
 SEMFIELD2_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD2_CHOICES
 PRAGMATICS_CHOICES = [NO_SEMFIELD] + _RAW_PRAGMATICS_CHOICES
 
-# ---------------------------------------------------------------------------
-# Tokenization
-# ---------------------------------------------------------------------------
-
-WORD_RE = re.compile(r"[А-Яа-яЁёA-Za-z]+|[^А-Яа-яЁёA-Za-z]+")
+CATEGORY_DISPLAY = {"linker": "линкер", "intro": "вводное слово"}
+CATEGORY_FROM_DISPLAY = {v: k for k, v in CATEGORY_DISPLAY.items()}
+CATEGORY_CHOICES = [NO_SEMFIELD] + list(CATEGORY_DISPLAY.values())
 
 
-def tokenize(text: str) -> List[Tuple[str, int, int, bool]]:
-    """Split text into (token, start, end, is_word)."""
-    tokens = []
-    for m in WORD_RE.finditer(text):
-        tok = m.group()
-        tokens.append((tok, m.start(), m.end(), tok[0].isalpha()))
-    return tokens
+def _category_display(category: str) -> str:
+    return CATEGORY_DISPLAY.get(category, NO_SEMFIELD)
+
+
+def _category_from_display(display: str) -> str:
+    return CATEGORY_FROM_DISPLAY.get(display, "")
 
 
 # ---------------------------------------------------------------------------
-# Matching
+# linker_extraction engine (stanza dependency parsing + rule-based scoring)
 # ---------------------------------------------------------------------------
 
-Match = Tuple[int, int, List[Tuple[int, int]], str]
+LINKERS_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "linkers.csv")
+INTRO_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "intro_words.csv")
+
+print("Loading stanza pipeline (tokenize,pos,lemma,depparse)...", file=sys.stderr)
+NLP = stanza.Pipeline("ru", processors="tokenize,pos,lemma,depparse")
+CHECKER = build_default_checker()
+PATTERNS_BY_TYPE = load_patterns("both", LINKERS_CSV, INTRO_CSV)
 
 
-def find_all_matches(text: str) -> List[Match]:
-    """
-    Find every occurrence of every linker in *text*.
-    Returns [(total_start, total_end, spans, dict_form)]
-    where spans is a list of (start, end) segments.
-    """
-    tokens = tokenize(text)
-    words = [(t[0], t[1], t[2]) for t in tokens if t[3]]
-    matches: List[Match] = []
-    seen_spans: Dict[Tuple[Tuple[int, int], ...], str] = {}
-
-    def add_match(total_s, total_e, spans, key):
-        span_key = tuple(spans)
-        if span_key not in seen_spans:
-            seen_spans[span_key] = key
-            matches.append((total_s, total_e, spans, key))
-        else:
-            if len(key) < len(seen_spans[span_key]):
-                seen_spans[span_key] = key
-                for idx, (ts, te, sp, k) in enumerate(matches):
-                    if tuple(sp) == span_key:
-                        matches[idx] = (total_s, total_e, spans, key)
-                        break
-
-    # ---- continuous linkers ----
-    for i, (w, ws, we) in enumerate(words):
-        for key, word_list in CONT_BY_FIRST.get(w.lower(), []):
-            if len(word_list) > len(words) - i:
-                continue
-            ok = True
-            for j, lw in enumerate(word_list):
-                if words[i + j][0].lower() != lw.lower():
-                    ok = False
-                    break
-            if not ok:
-                continue
-            s = words[i][1]
-            e = words[i + len(word_list) - 1][2]
-            add_match(s, e, [(s, e)], key)
-
-    # ---- discontinuous linkers ----
-    for i, (w, ws, we) in enumerate(words):
-        for key, parts in DISC_BY_FIRST.get(w.lower(), []):
-            first_part = parts[0]
-            if len(first_part) > len(words) - i:
-                continue
-
-            ok = True
-            for j, lw in enumerate(first_part):
-                if words[i + j][0].lower() != lw.lower():
-                    ok = False
-                    break
-            if not ok:
-                continue
-
-            spans = [(words[i][1], words[i + len(first_part) - 1][2])]
-            cur = i + len(first_part)
-            all_found = True
-
-            for part_words in parts[1:]:
-                found = False
-                for k in range(cur, len(words) - len(part_words) + 1):
-                    ok2 = True
-                    for j, lw in enumerate(part_words):
-                        if words[k + j][0].lower() != lw.lower():
-                            ok2 = False
-                            break
-                    if ok2:
-                        spans.append((words[k][1], words[k + len(part_words) - 1][2]))
-                        cur = k + len(part_words)
-                        found = True
-                        break
-                if not found:
-                    all_found = False
-                    break
-
-            if all_found:
-                total_s = spans[0][0]
-                total_e = spans[-1][1]
-                add_match(total_s, total_e, spans, key)
-
-    return matches
-
-
-# ---------------------------------------------------------------------------
-# Greedy resolution (recursive, atom-aware)
-# ---------------------------------------------------------------------------
-
-def greedy_resolve(matches: List[Match]) -> List[Tuple[int, int, str]]:
-    """
-    Given a list of matches, greedily select the longest non-overlapping
-    matches as primaries.  Matches fully contained inside a primary are
-    kept ONLY if they are listed as atoms of that primary in the JSON.
-    The same logic is applied recursively to the kept atoms.
-    Returns a flat list of (start, end, dict_form) ready for HTML.
-    """
-    if not matches:
-        return []
-
-    matches = sorted(matches, key=lambda m: (m[1] - m[0], m[0]), reverse=True)
-
-    primary = matches[0]
-    total_s, total_e, spans, key = primary
-
-    result = [(s, e, key) for s, e in spans]
-
-    allowed_atoms = ATOM_MAP.get(key, set())
-
-    contained: List[Match] = []
-    non_overlapping: List[Match] = []
-
-    for m in matches[1:]:
-        ms, me, mspans, mkey = m
-        if ms >= total_s and me <= total_e:
-            if mkey in allowed_atoms:
-                contained.append(m)
-        elif me <= total_s or ms >= total_e:
-            non_overlapping.append(m)
-
-    result.extend(greedy_resolve(contained))
-    result.extend(greedy_resolve(non_overlapping))
-    return result
+def dedupe_spans(spans: list[dict]) -> list[dict]:
+    """Collapse exact-duplicate (start, end) matches -- e.g. a word that
+    matches both the linker and intro-word lists -- keeping whichever has
+    the higher scored probability."""
+    best: dict[tuple[int, int], dict] = {}
+    order: list[tuple[int, int]] = []
+    for sp in spans:
+        pos = (sp["start"], sp["end"])
+        if pos not in best:
+            best[pos] = sp
+            order.append(pos)
+        elif sp["probability"] > best[pos]["probability"]:
+            best[pos] = sp
+    return [best[pos] for pos in order]
 
 
 # ---------------------------------------------------------------------------
 # Highlight state
 # ---------------------------------------------------------------------------
 
-Highlight = Dict[str, object]
+Highlight = dict[str, object]
 
 
 def make_highlight(
@@ -345,9 +227,10 @@ def make_highlight(
     end: int,
     label: str,
     source: str,
-    semfield1: List[str] = None,
-    semfield2: List[str] = None,
-    pragmatics: List[str] = None,
+    semfield1: list[str] = None,
+    semfield2: list[str] = None,
+    pragmatics: list[str] = None,
+    category: str = "",
 ) -> Highlight:
     return {
         "id": str(uuid.uuid4())[:8],
@@ -358,28 +241,11 @@ def make_highlight(
         "semfield1": list(semfield1) if semfield1 else [],
         "semfield2": list(semfield2) if semfield2 else [],
         "pragmatics": list(pragmatics) if pragmatics else [],
+        "category": category or "",
     }
 
 
-def deduplicate_flat(flat: List[Tuple[int, int, str]]) -> List[Tuple[int, int, str]]:
-    """
-    Remove exact (start, end) duplicates from a flat list of highlights.
-    If two highlights occupy the same span, keep the one with the shorter
-    dictionary/label form.
-    """
-    seen: Dict[Tuple[int, int], str] = {}
-    order: List[Tuple[int, int]] = []
-    for s, e, key in flat:
-        pos = (s, e)
-        if pos not in seen:
-            seen[pos] = key
-            order.append(pos)
-        elif len(key) < len(seen[pos]):
-            seen[pos] = key
-    return [(s, e, seen[(s, e)]) for s, e in order]
-
-
-def validate_highlights(highlights: List[Highlight]) -> Tuple[bool, str]:
+def validate_highlights(highlights: list[Highlight]) -> tuple[bool, str]:
     """
     Ensure highlights are either nested or disjoint.
     Exact duplicates and partial overlaps are rejected.
@@ -403,7 +269,7 @@ def validate_highlights(highlights: List[Highlight]) -> Tuple[bool, str]:
     return True, ""
 
 
-def find_phrase_positions(text: str, phrase: str) -> List[Tuple[int, int]]:
+def find_phrase_positions(text: str, phrase: str) -> list[tuple[int, int]]:
     """Return all case-insensitive occurrences of *phrase* in *text*."""
     if not phrase:
         return []
@@ -428,7 +294,7 @@ def escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-def build_html(text: str, highlights: List[Highlight]) -> str:
+def build_html(text: str, highlights: list[Highlight]) -> str:
     """Turn flat properly-nested highlights into HTML."""
     if not text:
         return '<div class="linker-container"></div>'
@@ -438,9 +304,14 @@ def build_html(text: str, highlights: List[Highlight]) -> str:
 
     events = []
     for h in highlights:
-        source_cls = " manual" if h.get("source") == "manual" else ""
-        events.append((h["start"], True, h["end"], h["label"], source_cls))
-        events.append((h["end"], False, h["start"], h["label"], source_cls))
+        if h.get("source") == "manual":
+            variant_cls = " manual"
+        elif h.get("category") == "intro":
+            variant_cls = " intro"
+        else:
+            variant_cls = ""
+        events.append((h["start"], True, h["end"], h["label"], variant_cls))
+        events.append((h["end"], False, h["start"], h["label"], variant_cls))
 
     events.sort(key=lambda ev: (ev[0], 0 if not ev[1] else 1, -ev[2]))
 
@@ -448,10 +319,10 @@ def build_html(text: str, highlights: List[Highlight]) -> str:
     pos = 0
     stack = []
 
-    for idx, is_open, other, label, source_cls in events:
+    for idx, is_open, other, label, variant_cls in events:
         parts.append(escape_html(text[pos:idx]))
         if is_open:
-            parts.append(f'<span class="linker{source_cls}" title="{escape_html(label)}">')
+            parts.append(f'<span class="linker{variant_cls}" title="{escape_html(label)}">')
             stack.append((idx, other, label))
         else:
             if stack and stack[-1][0] == other and stack[-1][1] == idx:
@@ -475,15 +346,15 @@ def build_html(text: str, highlights: List[Highlight]) -> str:
 # Tree conversion (for XML export)
 # ---------------------------------------------------------------------------
 
-def build_tree(highlights: List[Highlight]) -> List[Highlight]:
+def build_tree(highlights: list[Highlight]) -> list[Highlight]:
     """
     Convert a flat list of highlights into a nested tree structure
     based on span containment.  Highlights must already be valid
     (nested or disjoint).
     """
     sorted_hl = sorted(highlights, key=lambda h: (h["start"], -h["end"]))
-    roots: List[Highlight] = []
-    stack: List[Highlight] = []
+    roots: list[Highlight] = []
+    stack: list[Highlight] = []
 
     for h in sorted_hl:
         node: Highlight = {**h, "children": []}
@@ -502,7 +373,7 @@ def build_tree(highlights: List[Highlight]) -> List[Highlight]:
 # XML export
 # ---------------------------------------------------------------------------
 
-def build_xml(text: str, highlights: List[Highlight]) -> str:
+def build_xml(text: str, highlights: list[Highlight]) -> str:
     """Serialize the markup to a pretty-printed XML string."""
     root = ET.Element("linker-annotation")
 
@@ -525,6 +396,7 @@ def build_xml(text: str, highlights: List[Highlight]) -> str:
         el.set("semfield1", _alternatives_str(node.get("semfield1", [])))
         el.set("semfield2", _set_str(node.get("semfield2", [])))
         el.set("pragmatics", _set_str(node.get("pragmatics", [])))
+        el.set("category", str(node.get("category", "")))
         el.set("source", str(node["source"]))
         surface = text[node["start"]:node["end"]]
         el.set("surface", surface)
@@ -539,7 +411,7 @@ def build_xml(text: str, highlights: List[Highlight]) -> str:
     return reparsed.toprettyxml(indent="  ", encoding="UTF-8").decode("utf-8")
 
 
-def save_xml(text: str, highlights: List[Highlight]) -> Tuple[str, str]:
+def save_xml(text: str, highlights: list[Highlight]) -> tuple[str, str]:
     """Write the XML to a timestamped file and return its path."""
     if not text:
         return "", "Нет текста для сохранения."
@@ -560,50 +432,51 @@ def choice_str(h: Highlight, text: str) -> str:
     return f"{h['id']}: [{h['start']}-{h['end']}] \"{h['label']}\" ({preview})"
 
 
-def _normalize_alternatives(raw: str) -> List[str]:
+def _normalize_alternatives(raw: str) -> list[str]:
     """Convert a raw semfield1 field value into a list of alternatives (';'-separated)."""
     if not raw or str(raw).strip() == NO_SEMFIELD:
         return []
     return [sf.strip() for sf in str(raw).split(";") if sf.strip() and sf.strip() != NO_SEMFIELD]
 
 
-def _normalize_set(raw: str) -> List[str]:
+def _normalize_set(raw: str) -> list[str]:
     """Convert a raw semfield2/pragmatics field value into a list (','-separated set)."""
     if not raw or str(raw).strip() == NO_SEMFIELD:
         return []
     return [sf.strip() for sf in str(raw).split(",") if sf.strip() and sf.strip() != NO_SEMFIELD]
 
 
-def _alternatives_str(values: List[str]) -> str:
+def _alternatives_str(values: list[str]) -> str:
     return "; ".join(values) if values else ""
 
 
-def _set_str(values: List[str]) -> str:
+def _set_str(values: list[str]) -> str:
     return ", ".join(values) if values else ""
 
 
-def _alternatives_display_value(values: List[str]) -> str:
+def _alternatives_display_value(values: list[str]) -> str:
     return "; ".join(values) if values else NO_SEMFIELD
 
 
-def _set_display_value(values: List[str]) -> str:
+def _set_display_value(values: list[str]) -> str:
     return ", ".join(values) if values else NO_SEMFIELD
 
 
-def highlights_to_table(highlights: List[Highlight], text: str) -> str:
+def highlights_to_table(highlights: list[Highlight], text: str) -> str:
     """Render highlights as a Markdown table string."""
     if not highlights:
         return "_Разметка отсутствует_"
     rows = []
     rows.append(
-        "| id | start | end | название коннектора | основное значение | "
+        "| id | start | end | название коннектора | тип | основное значение | "
         "сопроводительное значение | прагматическая установка | source | текст |"
     )
-    rows.append("|---|---|---|---|---|---|---|---|---|")
+    rows.append("|---|---|---|---|---|---|---|---|---|---|")
     for h in sorted(highlights, key=lambda x: (x["start"], -x["end"])):
         surface = text[h["start"]:h["end"]].replace("|", "\\|").replace("\n", " ")
         rows.append(
             f"| {h['id']} | {h['start']} | {h['end']} | {h['label']} | "
+            f"{_category_display(h.get('category', ''))} | "
             f"{_alternatives_display_value(h.get('semfield1', []))} | "
             f"{_set_display_value(h.get('semfield2', []))} | "
             f"{_set_display_value(h.get('pragmatics', []))} | {h['source']} | {surface} |"
@@ -611,7 +484,7 @@ def highlights_to_table(highlights: List[Highlight], text: str) -> str:
     return "\n".join(rows)
 
 
-def compute_stats(highlights: List[Highlight]) -> str:
+def compute_stats(highlights: list[Highlight]) -> str:
     """Return Markdown with connector statistics, broken down separately by
     semfield1 (primary meaning), semfield2 (accompanying meaning) and
     pragmatics."""
@@ -635,9 +508,23 @@ def compute_stats(highlights: List[Highlight]) -> str:
     ]
 
     lines = [f"**Всего коннекторов:** {total_connectors} (атомов: {total_atoms})"]
+
+    category_counts: dict[str, int] = {}
+    for root in roots:
+        category_counts[root.get("category", "")] = category_counts.get(root.get("category", ""), 0) + 1
+    if category_counts:
+        lines.append("")
+        lines.append(
+            "**По типу:** "
+            + ", ".join(
+                f"{_category_display(cat)}: {count}"
+                for cat, count in sorted(category_counts.items(), key=lambda kv: _category_display(kv[0]))
+            )
+        )
+
     for field, title in breakdowns:
-        group_counts: Dict[str, int] = {}
-        group_atoms: Dict[str, int] = {}
+        group_counts: dict[str, int] = {}
+        group_atoms: dict[str, int] = {}
         for root in roots:
             root_atom_count = count_atoms(root)
             for sf in root.get(field, []):
@@ -651,7 +538,7 @@ def compute_stats(highlights: List[Highlight]) -> str:
     return "\n".join(lines)
 
 
-def render_state(text: str, highlights: List[Highlight], selected_id: str = ""):
+def render_state(text: str, highlights: list[Highlight], selected_id: str = ""):
     """Return updated HTML, table, dropdown, and stats for a given state."""
     html = build_html(text, highlights)
     table = highlights_to_table(highlights, text)
@@ -681,25 +568,26 @@ def analyze_text(text: str):
             [],
             "",
         )
-    matches = find_all_matches(text)
-    flat = greedy_resolve(matches)
-    flat = deduplicate_flat(flat)
+    parsed_sentences, _word_count = parse_sentences(text, NLP)
+    spans = extract_spans(parsed_sentences, CHECKER, PATTERNS_BY_TYPE)
+    spans = dedupe_spans(spans)
     highlights = [
         make_highlight(
-            s, e, key, "auto",
-            SEMFIELD1_MAP.get(key, []),
-            SEMFIELD2_MAP.get(key, []),
-            PRAGMATICS_MAP.get(key, []),
+            sp["start"], sp["end"], sp["surface"], "auto",
+            SEMFIELD1_MAP.get(sp["surface"], []),
+            SEMFIELD2_MAP.get(sp["surface"], []),
+            PRAGMATICS_MAP.get(sp["surface"], []),
+            category=sp["type"],
         )
-        for s, e, key in flat
+        for sp in spans
     ]
     html, table, dropdown, stats = render_state(text, highlights)
     return html, table, dropdown, stats, text, highlights, f"Найдено разметок: {len(highlights)}"
 
 
 def add_by_position(
-    text: str, highlights: List[Highlight], start, end, label: str,
-    semfield1: str, semfield2: str, pragmatics: str,
+    text: str, highlights: list[Highlight], start, end, label: str,
+    semfield1: str, semfield2: str, pragmatics: str, category: str,
 ):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
@@ -717,6 +605,7 @@ def add_by_position(
     new_hl = make_highlight(
         start, end, str(label).strip(), "manual",
         _normalize_alternatives(semfield1), _normalize_set(semfield2), _normalize_set(pragmatics),
+        category=_category_from_display(category),
     )
     new_highlights = highlights + [new_hl]
     ok, msg = validate_highlights(new_highlights)
@@ -728,8 +617,8 @@ def add_by_position(
 
 
 def add_by_phrase(
-    text: str, highlights: List[Highlight], phrase: str, label: str,
-    semfield1: str, semfield2: str, pragmatics: str,
+    text: str, highlights: list[Highlight], phrase: str, label: str,
+    semfield1: str, semfield2: str, pragmatics: str, category: str,
 ):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
@@ -745,11 +634,15 @@ def add_by_phrase(
     semfield1_list = _normalize_alternatives(semfield1)
     semfield2_list = _normalize_set(semfield2)
     pragmatics_list = _normalize_set(pragmatics)
+    category_value = _category_from_display(category)
     new_highlights = list(highlights)
     added_ids = []
     label_clean = str(label).strip()
     for s, e in positions:
-        new_hl = make_highlight(s, e, label_clean, "manual", semfield1_list, semfield2_list, pragmatics_list)
+        new_hl = make_highlight(
+            s, e, label_clean, "manual", semfield1_list, semfield2_list, pragmatics_list,
+            category=category_value,
+        )
         test = new_highlights + [new_hl]
         ok, _ = validate_highlights(test)
         if ok:
@@ -770,22 +663,23 @@ def _selected_id_from_choice(choice: str) -> str:
     return choice.split(":", 1)[0]
 
 
-def on_select_highlight(text: str, highlights: List[Highlight], choice: str):
+def on_select_highlight(text: str, highlights: list[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
-        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     for h in highlights:
         if h["id"] == hid:
             semfield1_value = _alternatives_display_value(h.get("semfield1", []))
             semfield2_value = _set_display_value(h.get("semfield2", []))
             pragmatics_value = _set_display_value(h.get("pragmatics", []))
-            return h["start"], h["end"], h["label"], semfield1_value, semfield2_value, pragmatics_value
-    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+            category_value = _category_display(h.get("category", ""))
+            return h["start"], h["end"], h["label"], semfield1_value, semfield2_value, pragmatics_value, category_value
+    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
 
 def update_highlight(
-    text: str, highlights: List[Highlight], choice: str, start, end, label: str,
-    semfield1: str, semfield2: str, pragmatics: str,
+    text: str, highlights: list[Highlight], choice: str, start, end, label: str,
+    semfield1: str, semfield2: str, pragmatics: str, category: str,
 ):
     hid = _selected_id_from_choice(choice)
     if not hid:
@@ -803,6 +697,7 @@ def update_highlight(
     semfield1_list = _normalize_alternatives(semfield1)
     semfield2_list = _normalize_set(semfield2)
     pragmatics_list = _normalize_set(pragmatics)
+    category_value = _category_from_display(category)
 
     new_highlights = []
     found = False
@@ -815,6 +710,7 @@ def update_highlight(
             new_h["semfield1"] = semfield1_list
             new_h["semfield2"] = semfield2_list
             new_h["pragmatics"] = pragmatics_list
+            new_h["category"] = category_value
             new_highlights.append(new_h)
             found = True
         else:
@@ -831,7 +727,7 @@ def update_highlight(
     return html, table, dropdown, stats, new_highlights, "Разметка изменена."
 
 
-def delete_highlight(text: str, highlights: List[Highlight], choice: str):
+def delete_highlight(text: str, highlights: list[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
         return (*render_state(text, highlights), highlights, "Выберите разметку для удаления.")
@@ -851,7 +747,8 @@ def main():
         gr.Markdown("# Аннотатор коннекторов")
         gr.Markdown(
             "Вставьте текст на русском языке и нажмите **Анализировать**. "
-            "Найденные коннекторы будут подсвечены оранжевым, ручная разметка — синим. "
+            "Найденные линкеры подсвечены оранжевым, вводные слова — зелёным, "
+            "ручная разметка — синим. "
             "Наведите курсор на фрагмент, чтобы увидеть название коннектора."
         )
 
@@ -873,6 +770,11 @@ def main():
                         add_start = gr.Number(label="Начало (символ)", precision=0, minimum=0)
                         add_end = gr.Number(label="Конец (символ)", precision=0, minimum=0)
                         add_label_pos = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
+                        add_category_pos = gr.Dropdown(
+                            label="Тип",
+                            choices=CATEGORY_CHOICES,
+                            value=NO_SEMFIELD,
+                        )
                         add_semfield1_pos = gr.Dropdown(
                             label="Основное значение (semfield1)",
                             info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -899,6 +801,11 @@ def main():
                     with gr.TabItem("По фразе"):
                         add_phrase = gr.Textbox(label="Фраза", placeholder="Введите точную фразу из текста")
                         add_label_phrase = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
+                        add_category_phrase = gr.Dropdown(
+                            label="Тип",
+                            choices=CATEGORY_CHOICES,
+                            value=NO_SEMFIELD,
+                        )
                         add_semfield1_phrase = gr.Dropdown(
                             label="Основное значение (semfield1)",
                             info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -927,6 +834,11 @@ def main():
                 edit_start = gr.Number(label="Начало", precision=0, minimum=0)
                 edit_end = gr.Number(label="Конец", precision=0, minimum=0)
                 edit_label = gr.Textbox(label="Название коннектора")
+                edit_category = gr.Dropdown(
+                    label="Тип",
+                    choices=CATEGORY_CHOICES,
+                    value=NO_SEMFIELD,
+                )
                 edit_semfield1 = gr.Dropdown(
                     label="Основное значение (semfield1)",
                     info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -983,7 +895,7 @@ def main():
             fn=add_by_position,
             inputs=[
                 state_text, state_highlights, add_start, add_end, add_label_pos,
-                add_semfield1_pos, add_semfield2_pos, add_pragmatics_pos,
+                add_semfield1_pos, add_semfield2_pos, add_pragmatics_pos, add_category_pos,
             ],
             outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
@@ -992,7 +904,7 @@ def main():
             fn=add_by_phrase,
             inputs=[
                 state_text, state_highlights, add_phrase, add_label_phrase,
-                add_semfield1_phrase, add_semfield2_phrase, add_pragmatics_phrase,
+                add_semfield1_phrase, add_semfield2_phrase, add_pragmatics_phrase, add_category_phrase,
             ],
             outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )
@@ -1000,14 +912,14 @@ def main():
         hl_select.change(
             fn=on_select_highlight,
             inputs=[state_text, state_highlights, hl_select],
-            outputs=[edit_start, edit_end, edit_label, edit_semfield1, edit_semfield2, edit_pragmatics],
+            outputs=[edit_start, edit_end, edit_label, edit_semfield1, edit_semfield2, edit_pragmatics, edit_category],
         )
 
         update_btn.click(
             fn=update_highlight,
             inputs=[
                 state_text, state_highlights, hl_select, edit_start, edit_end, edit_label,
-                edit_semfield1, edit_semfield2, edit_pragmatics,
+                edit_semfield1, edit_semfield2, edit_pragmatics, edit_category,
             ],
             outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
         )

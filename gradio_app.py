@@ -43,7 +43,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "linker_extraction"))
 
 import stanza  # noqa: E402
 from extract import load_patterns  # noqa: E402
-from pipeline import extract_spans, parse_sentences  # noqa: E402
+from pipeline import dedupe_spans, extract_spans, parse_sentences  # noqa: E402
 from rules import build_default_checker  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -199,21 +199,7 @@ NLP = stanza.Pipeline("ru", processors="tokenize,pos,lemma,depparse")
 CHECKER = build_default_checker()
 PATTERNS_BY_TYPE = load_patterns("both", LINKERS_CSV, INTRO_CSV)
 
-
-def dedupe_spans(spans: List[dict]) -> List[dict]:
-    """Collapse exact-duplicate (start, end) matches -- e.g. a word that
-    matches both the linker and intro-word lists -- keeping whichever has
-    the higher scored probability."""
-    best: Dict[Tuple[int, int], dict] = {}
-    order: List[Tuple[int, int]] = []
-    for sp in spans:
-        pos = (sp["start"], sp["end"])
-        if pos not in best:
-            best[pos] = sp
-            order.append(pos)
-        elif sp["probability"] > best[pos]["probability"]:
-            best[pos] = sp
-    return [best[pos] for pos in order]
+# `dedupe_spans` is imported from linker_extraction.pipeline (single source).
 
 
 # ---------------------------------------------------------------------------

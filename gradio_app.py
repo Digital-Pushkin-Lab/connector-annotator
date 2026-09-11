@@ -4,7 +4,9 @@
 Gradio interface for highlighting Russian linker words in text.
 
 Original features:
-  * greedy longest-first matching against nested_linkers.json
+  * detection via linker_extraction (stanza dependency parsing +
+    rule-based scoring); semfields/pragmatics looked up from
+    linker_extraction/data/linkers.csv, keyed by matched surface form
   * atoms of a matched linker are highlighted as nested spans
 
 Expanded features:
@@ -13,7 +15,6 @@ Expanded features:
   * export the resulting markup as an XML document
 """
 
-import json
 import sys
 import uuid
 import xml.dom.minidom
@@ -21,6 +22,8 @@ from datetime import datetime
 from typing import Dict, List, Set, Tuple
 from xml.etree import ElementTree as ET
 import os
+
+import pandas as pd
 
 # Remove ALL_PROXY and all_proxy BEFORE anything else
 os.environ.pop("ALL_PROXY", None)
@@ -109,7 +112,8 @@ CSS = """
 }
 """
 
-JSON_PATH = os.path.join(os.path.dirname(__file__), "nested_linkers.json")
+LINKERS_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "linkers.csv")
+INTRO_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "intro_words.csv")
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -117,15 +121,15 @@ JSON_PATH = os.path.join(os.path.dirname(__file__), "nested_linkers.json")
 
 def load_linker_data(path: str):
     """
-    Load nested_linkers.json and return, keyed by dict_form (the same
-    surface-string convention -- "..." for discontinuous connectors -- used
-    by linker_extraction's matches):
-      - semfield1_map:    dict_form -> list of primary-meaning alternatives
-      - semfield2_map:    dict_form -> list of obligatory accompanying meanings
-      - pragmatics_map:   dict_form -> list of obligatory pragmatic meanings
+    Load linker_extraction/data/linkers.csv and return, keyed by the
+    `linker` column (the same surface-string convention -- "..." for
+    discontinuous connectors -- that `matching.pattern_surface` reconstructs
+    for linker_extraction's matches):
+      - semfield1_map:    linker -> list of primary-meaning alternatives (';'-separated in the CSV)
+      - semfield2_map:    linker -> list of obligatory accompanying meanings (','-separated)
+      - pragmatics_map:   linker -> list of obligatory pragmatic meanings (','-separated)
     """
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    df = pd.read_csv(path, keep_default_na=False)
 
     semfield1_map: Dict[str, List[str]] = {}
     semfield2_map: Dict[str, List[str]] = {}
@@ -134,20 +138,24 @@ def load_linker_data(path: str):
     all_semfield2: Set[str] = set()
     all_pragmatics: Set[str] = set()
 
-    for key, value in data.items():
-        semfield1 = value.get("semfield1") or []
+    for row in df.itertuples(index=False):
+        key = str(row.linker).strip()
+        if not key:
+            continue
+
+        semfield1 = [p.strip() for p in str(row.semfield1).split(";") if p.strip()]
         if semfield1:
-            semfield1_map[key] = list(semfield1)
+            semfield1_map[key] = semfield1
             all_semfield1.update(semfield1)
 
-        semfield2 = value.get("semfield2") or []
+        semfield2 = [p.strip() for p in str(row.semfield2).split(",") if p.strip()]
         if semfield2:
-            semfield2_map[key] = list(semfield2)
+            semfield2_map[key] = semfield2
             all_semfield2.update(semfield2)
 
-        pragmatics = value.get("pragmatics") or []
+        pragmatics = [p.strip() for p in str(row.pragmatics).split(",") if p.strip()]
         if pragmatics:
-            pragmatics_map[key] = list(pragmatics)
+            pragmatics_map[key] = pragmatics
             all_pragmatics.update(pragmatics)
 
     return (
@@ -167,7 +175,7 @@ def load_linker_data(path: str):
     _RAW_SEMFIELD1_CHOICES,
     _RAW_SEMFIELD2_CHOICES,
     _RAW_PRAGMATICS_CHOICES,
-) = load_linker_data(JSON_PATH)
+) = load_linker_data(LINKERS_CSV)
 
 NO_SEMFIELD = "не выбрано"
 SEMFIELD1_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD1_CHOICES
@@ -190,9 +198,6 @@ def _category_from_display(display: str) -> str:
 # ---------------------------------------------------------------------------
 # linker_extraction engine (stanza dependency parsing + rule-based scoring)
 # ---------------------------------------------------------------------------
-
-LINKERS_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "linkers.csv")
-INTRO_CSV = os.path.join(os.path.dirname(__file__), "linker_extraction", "data", "intro_words.csv")
 
 print("Loading stanza pipeline (tokenize,pos,lemma,depparse)...", file=sys.stderr)
 NLP = stanza.Pipeline("ru", processors="tokenize,pos,lemma,depparse")

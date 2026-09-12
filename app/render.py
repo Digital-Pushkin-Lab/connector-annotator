@@ -2,7 +2,7 @@
 markup, the Markdown table, breakdown statistics, and the combined
 render_state() bundle used after every edit."""
 
-from typing import Dict, List
+from typing import Dict, List, Set
 
 import gradio as gr
 
@@ -97,15 +97,22 @@ def compute_stats(highlights: List[Highlight]) -> str:
     if not highlights:
         return "_Нет данных для статистики_"
 
-    tree = build_tree(highlights)
+    # Several highlight entries share one group_id when a connector is split
+    # into multiple parts (e.g. "если" and "то" from "если...то"); count and
+    # break down each such connector once, not once per part.
+    seen_groups: Set[str] = set()
+    unique_highlights: List[Highlight] = []
+    for h in highlights:
+        gid = h.get("group_id", h["id"])
+        if gid in seen_groups:
+            continue
+        seen_groups.add(gid)
+        unique_highlights.append(h)
+
+    tree = build_tree(unique_highlights)
     roots = tree
 
-    def count_atoms(node: Highlight) -> int:
-        children = node.get("children", [])
-        return len(children) + sum(count_atoms(child) for child in children)
-
     total_connectors = len(roots)
-    total_atoms = sum(count_atoms(root) for root in roots)
 
     breakdowns = [
         ("semfield1", "По основному значению (semfield1)"),
@@ -113,7 +120,7 @@ def compute_stats(highlights: List[Highlight]) -> str:
         ("pragmatics", "По прагматической установке"),
     ]
 
-    lines = [f"**Всего коннекторов:** {total_connectors} (атомов: {total_atoms})"]
+    lines = [f"**Всего коннекторов:** {total_connectors}"]
 
     category_counts: Dict[str, int] = {}
     for root in roots:
@@ -130,17 +137,14 @@ def compute_stats(highlights: List[Highlight]) -> str:
 
     for field, title in breakdowns:
         group_counts: Dict[str, int] = {}
-        group_atoms: Dict[str, int] = {}
         for root in roots:
-            root_atom_count = count_atoms(root)
             for sf in root.get(field, []):
                 group_counts[sf] = group_counts.get(sf, 0) + 1
-                group_atoms[sf] = group_atoms.get(sf, 0) + root_atom_count
         if group_counts:
             lines.append("")
             lines.append(f"**{title}:**")
             for sf in sorted(group_counts.keys()):
-                lines.append(f"- {sf}: {group_counts[sf]} (атомов: {group_atoms.get(sf, 0)})")
+                lines.append(f"- {sf}: {group_counts[sf]}")
     return "\n".join(lines)
 
 

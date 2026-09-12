@@ -4,3 +4,4 @@ stanza
 razdel
 tqdm
 openpyxl
+python-docx

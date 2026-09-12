@@ -95,7 +95,19 @@ def compute_stats(highlights: list[Highlight]) -> str:
     if not highlights:
         return "_Нет данных для статистики_"
 
-    tree = build_tree(highlights)
+    # Several highlight entries share one group_id when a connector is split
+    # into multiple parts (e.g. "если" and "то" from "если...то"); count and
+    # break down each such connector once, not once per part.
+    seen_groups: set[str] = set()
+    unique_highlights: list[Highlight] = []
+    for h in highlights:
+        gid = h.get("group_id", h["id"])
+        if gid in seen_groups:
+            continue
+        seen_groups.add(gid)
+        unique_highlights.append(h)
+
+    tree = build_tree(unique_highlights)
     roots = tree
 
     total_connectors = len(roots)

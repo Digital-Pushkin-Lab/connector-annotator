@@ -98,12 +98,7 @@ def compute_stats(highlights: list[Highlight]) -> str:
     tree = build_tree(highlights)
     roots = tree
 
-    def count_atoms(node: Highlight) -> int:
-        children = node.get("children", [])
-        return len(children) + sum(count_atoms(child) for child in children)
-
     total_connectors = len(roots)
-    total_atoms = sum(count_atoms(root) for root in roots)
 
     breakdowns = [
         ("semfield1", "По основному значению (semfield1)"),
@@ -111,7 +106,7 @@ def compute_stats(highlights: list[Highlight]) -> str:
         ("pragmatics", "По прагматической установке"),
     ]
 
-    lines = [f"**Всего коннекторов:** {total_connectors} (атомов: {total_atoms})"]
+    lines = [f"**Всего коннекторов:** {total_connectors}"]
 
     category_counts: dict[str, int] = {}
     for root in roots:
@@ -128,17 +123,14 @@ def compute_stats(highlights: list[Highlight]) -> str:
 
     for field, title in breakdowns:
         group_counts: dict[str, int] = {}
-        group_atoms: dict[str, int] = {}
         for root in roots:
-            root_atom_count = count_atoms(root)
             for sf in root.get(field, []):
                 group_counts[sf] = group_counts.get(sf, 0) + 1
-                group_atoms[sf] = group_atoms.get(sf, 0) + root_atom_count
         if group_counts:
             lines.append("")
             lines.append(f"**{title}:**")
             for sf in sorted(group_counts.keys()):
-                lines.append(f"- {sf}: {group_counts[sf]} (атомов: {group_atoms.get(sf, 0)})")
+                lines.append(f"- {sf}: {group_counts[sf]}")
     return "\n".join(lines)
 
 

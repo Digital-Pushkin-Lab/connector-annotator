@@ -62,12 +62,19 @@ CSS = """
     background-color: rgba(120, 170, 90, 0.65) !important;
 }
 .scrollable-table {
-    max-height: 400px;
-    overflow-y: auto;
+    overflow-x: auto;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     padding: 0.5rem;
     background: #ffffff;
+}
+.scrollable-table table {
+    width: max-content;
+    min-width: 100%;
+}
+.scrollable-table th,
+.scrollable-table td {
+    white-space: nowrap;
 }
 .progress-outer {
     background: #e8e8e8;

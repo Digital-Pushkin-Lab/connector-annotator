@@ -3,7 +3,7 @@ highlights in response to UI actions."""
 
 import gradio as gr
 
-from .config import PRAGMATICS_MAP, SEMFIELD1_MAP, SEMFIELD2_MAP, _category_display, _category_from_display
+from .config import PRAGMATICS_MAP, SEMFIELD1_MAP, SEMFIELD2_MAP
 from .engine import CHECKER, NLP, PATTERNS_BY_TYPE, dedupe_spans, extract_spans, parse_sentences
 from .highlights import (
     Highlight,
@@ -32,7 +32,6 @@ def build_highlights(text: str) -> list[Highlight]:
             SEMFIELD1_MAP.get(sp["surface"], []),
             SEMFIELD2_MAP.get(sp["surface"], []),
             PRAGMATICS_MAP.get(sp["surface"], []),
-            category=sp["type"],
             # все части одного (в т.ч. разрывного) коннектора, например
             # "если" и "то" из "если...то", получают общий group_id
             group_id=sp.get("group_id"),
@@ -59,7 +58,7 @@ def analyze_text(text: str):
 
 def add_by_position(
     text: str, highlights: list[Highlight], start, end, label: str,
-    semfield1: str, semfield2: str, pragmatics: str, category: str,
+    semfield1: str, semfield2: str, pragmatics: str,
 ):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
@@ -77,7 +76,6 @@ def add_by_position(
     new_hl = make_highlight(
         start, end, str(label).strip(), "manual",
         _normalize_alternatives(semfield1), _normalize_set(semfield2), _normalize_set(pragmatics),
-        category=_category_from_display(category),
     )
     new_highlights = highlights + [new_hl]
     ok, msg = validate_highlights(new_highlights)
@@ -90,7 +88,7 @@ def add_by_position(
 
 def add_by_phrase(
     text: str, highlights: list[Highlight], phrase: str, label: str,
-    semfield1: str, semfield2: str, pragmatics: str, category: str,
+    semfield1: str, semfield2: str, pragmatics: str,
 ):
     if not text:
         return (*render_state(text, highlights), highlights, "Введите текст.")
@@ -106,14 +104,12 @@ def add_by_phrase(
     semfield1_list = _normalize_alternatives(semfield1)
     semfield2_list = _normalize_set(semfield2)
     pragmatics_list = _normalize_set(pragmatics)
-    category_value = _category_from_display(category)
     new_highlights = list(highlights)
     added_ids = []
     label_clean = str(label).strip()
     for s, e in positions:
         new_hl = make_highlight(
             s, e, label_clean, "manual", semfield1_list, semfield2_list, pragmatics_list,
-            category=category_value,
         )
         test = new_highlights + [new_hl]
         ok, _ = validate_highlights(test)
@@ -132,20 +128,19 @@ def add_by_phrase(
 def on_select_highlight(text: str, highlights: list[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
-        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
     for h in highlights:
         if h["id"] == hid:
             semfield1_value = _alternatives_display_value(h.get("semfield1", []))
             semfield2_value = _set_display_value(h.get("semfield2", []))
             pragmatics_value = _set_display_value(h.get("pragmatics", []))
-            category_value = _category_display(h.get("category", ""))
-            return h["start"], h["end"], h["label"], semfield1_value, semfield2_value, pragmatics_value, category_value
-    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+            return h["start"], h["end"], h["label"], semfield1_value, semfield2_value, pragmatics_value
+    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
 
 def update_highlight(
     text: str, highlights: list[Highlight], choice: str, start, end, label: str,
-    semfield1: str, semfield2: str, pragmatics: str, category: str,
+    semfield1: str, semfield2: str, pragmatics: str,
 ):
     hid = _selected_id_from_choice(choice)
     if not hid:
@@ -163,7 +158,6 @@ def update_highlight(
     semfield1_list = _normalize_alternatives(semfield1)
     semfield2_list = _normalize_set(semfield2)
     pragmatics_list = _normalize_set(pragmatics)
-    category_value = _category_from_display(category)
 
     new_highlights = []
     found = False
@@ -176,7 +170,6 @@ def update_highlight(
             new_h["semfield1"] = semfield1_list
             new_h["semfield2"] = semfield2_list
             new_h["pragmatics"] = pragmatics_list
-            new_h["category"] = category_value
             new_highlights.append(new_h)
             found = True
         else:

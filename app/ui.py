@@ -12,7 +12,6 @@ from .callbacks import (
     update_highlight,
 )
 from .config import (
-    CATEGORY_CHOICES,
     CSS,
     NO_SEMFIELD,
     PRAGMATICS_CHOICES,
@@ -47,11 +46,6 @@ def build_single_text_tab():
                     add_start = gr.Number(label="Начало (символ)", precision=0, minimum=0)
                     add_end = gr.Number(label="Конец (символ)", precision=0, minimum=0)
                     add_label_pos = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
-                    add_category_pos = gr.Dropdown(
-                        label="Тип",
-                        choices=CATEGORY_CHOICES,
-                        value=NO_SEMFIELD,
-                    )
                     add_semfield1_pos = gr.Dropdown(
                         label="Основное значение (semfield1)",
                         info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -78,11 +72,6 @@ def build_single_text_tab():
                 with gr.TabItem("По фразе"):
                     add_phrase = gr.Textbox(label="Фраза", placeholder="Введите точную фразу из текста")
                     add_label_phrase = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
-                    add_category_phrase = gr.Dropdown(
-                        label="Тип",
-                        choices=CATEGORY_CHOICES,
-                        value=NO_SEMFIELD,
-                    )
                     add_semfield1_phrase = gr.Dropdown(
                         label="Основное значение (semfield1)",
                         info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -111,11 +100,6 @@ def build_single_text_tab():
             edit_start = gr.Number(label="Начало", precision=0, minimum=0)
             edit_end = gr.Number(label="Конец", precision=0, minimum=0)
             edit_label = gr.Textbox(label="Название коннектора")
-            edit_category = gr.Dropdown(
-                label="Тип",
-                choices=CATEGORY_CHOICES,
-                value=NO_SEMFIELD,
-            )
             edit_semfield1 = gr.Dropdown(
                 label="Основное значение (semfield1)",
                 info="Альтернативы через «;» — можно оставить одну или несколько.",
@@ -178,7 +162,7 @@ def build_single_text_tab():
         fn=add_by_position,
         inputs=[
             state_text, state_highlights, add_start, add_end, add_label_pos,
-            add_semfield1_pos, add_semfield2_pos, add_pragmatics_pos, add_category_pos,
+            add_semfield1_pos, add_semfield2_pos, add_pragmatics_pos,
         ],
         outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
     )
@@ -187,7 +171,7 @@ def build_single_text_tab():
         fn=add_by_phrase,
         inputs=[
             state_text, state_highlights, add_phrase, add_label_phrase,
-            add_semfield1_phrase, add_semfield2_phrase, add_pragmatics_phrase, add_category_phrase,
+            add_semfield1_phrase, add_semfield2_phrase, add_pragmatics_phrase,
         ],
         outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
     )
@@ -195,14 +179,14 @@ def build_single_text_tab():
     hl_select.change(
         fn=on_select_highlight,
         inputs=[state_text, state_highlights, hl_select],
-        outputs=[edit_start, edit_end, edit_label, edit_semfield1, edit_semfield2, edit_pragmatics, edit_category],
+        outputs=[edit_start, edit_end, edit_label, edit_semfield1, edit_semfield2, edit_pragmatics],
     )
 
     update_btn.click(
         fn=update_highlight,
         inputs=[
             state_text, state_highlights, hl_select, edit_start, edit_end, edit_label,
-            edit_semfield1, edit_semfield2, edit_pragmatics, edit_category,
+            edit_semfield1, edit_semfield2, edit_pragmatics,
         ],
         outputs=[output_html, output_table, hl_select, output_stats, state_highlights, msg_box],
     )
@@ -296,7 +280,7 @@ def main():
             with gr.TabItem("Разметка текста"):
                 gr.Markdown(
                     "Вставьте текст на русском языке и нажмите **Анализировать**. "
-                    "Найденные линкеры подсвечены оранжевым, вводные слова — зелёным, "
+                    "Найденные линкеры подсвечены оранжевым, "
                     "ручная разметка — синим. "
                     "Наведите курсор на фрагмент, чтобы увидеть название коннектора."
                 )

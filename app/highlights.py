@@ -17,7 +17,6 @@ def make_highlight(
     semfield1: list[str] = None,
     semfield2: list[str] = None,
     pragmatics: list[str] = None,
-    category: str = "",
     group_id: str = None,
 ) -> Highlight:
     """`id` uniquely addresses this single span (used internally to select/
@@ -36,7 +35,6 @@ def make_highlight(
         "semfield1": list(semfield1) if semfield1 else [],
         "semfield2": list(semfield2) if semfield2 else [],
         "pragmatics": list(pragmatics) if pragmatics else [],
-        "category": category or "",
     }
 
 

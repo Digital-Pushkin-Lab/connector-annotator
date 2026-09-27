@@ -4,7 +4,6 @@ render_state() bundle used after every edit."""
 
 import gradio as gr
 
-from .config import _category_display
 from .highlights import (
     Highlight,
     _alternatives_display_value,
@@ -28,12 +27,7 @@ def build_html(text: str, highlights: list[Highlight]) -> str:
 
     events = []
     for h in highlights:
-        if h.get("source") == "manual":
-            variant_cls = " manual"
-        elif h.get("category") == "intro":
-            variant_cls = " intro"
-        else:
-            variant_cls = ""
+        variant_cls = " manual" if h.get("source") == "manual" else ""
         events.append((h["start"], True, h["end"], h["label"], variant_cls))
         events.append((h["end"], False, h["start"], h["label"], variant_cls))
 
@@ -72,15 +66,14 @@ def highlights_to_table(highlights: list[Highlight], text: str) -> str:
         return "_Разметка отсутствует_"
     rows = []
     rows.append(
-        "| id | start | end | название коннектора | тип | основное значение | "
+        "| id | start | end | название коннектора | основное значение | "
         "сопроводительное значение | прагматическая установка | source | текст |"
     )
-    rows.append("|---|---|---|---|---|---|---|---|---|---|")
+    rows.append("|---|---|---|---|---|---|---|---|---|")
     for h in sorted(highlights, key=lambda x: (x["start"], -x["end"])):
         surface = text[h["start"]:h["end"]].replace("|", "\\|").replace("\n", " ")
         rows.append(
             f"| {h.get('group_id', h['id'])} | {h['start']} | {h['end']} | {h['label']} | "
-            f"{_category_display(h.get('category', ''))} | "
             f"{_alternatives_display_value(h.get('semfield1', []))} | "
             f"{_set_display_value(h.get('semfield2', []))} | "
             f"{_set_display_value(h.get('pragmatics', []))} | {h['source']} | {surface} |"
@@ -119,19 +112,6 @@ def compute_stats(highlights: list[Highlight]) -> str:
     ]
 
     lines = [f"**Всего коннекторов:** {total_connectors}"]
-
-    category_counts: dict[str, int] = {}
-    for root in roots:
-        category_counts[root.get("category", "")] = category_counts.get(root.get("category", ""), 0) + 1
-    if category_counts:
-        lines.append("")
-        lines.append(
-            "**По типу:** "
-            + ", ".join(
-                f"{_category_display(cat)}: {count}"
-                for cat, count in sorted(category_counts.items(), key=lambda kv: _category_display(kv[0]))
-            )
-        )
 
     for field, title in breakdowns:
         group_counts: dict[str, int] = {}

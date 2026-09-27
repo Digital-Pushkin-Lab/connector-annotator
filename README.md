@@ -4,7 +4,7 @@
 
 ## Установка
 
-Автоматическая разметка линкеров и вводных слов использует движок из
+Автоматическая разметка линкеров использует движок из
 [`linker_extraction`](https://github.com/Digital-Pushkin-Lab/connector-extractor),
 подключённого как git submodule.
 

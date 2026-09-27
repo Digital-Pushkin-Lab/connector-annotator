@@ -1,7 +1,7 @@
 """Gradio interface for highlighting Russian linker words in text.
 
 Package layout:
-  * config       -- CSS, file paths, semfield/pragmatics/category lookups
+  * config       -- CSS, file paths, semfield/pragmatics lookups
   * engine       -- linker_extraction setup (stanza pipeline, checker, patterns)
   * highlights   -- the highlight data model (create/validate/search/tree)
   * render       -- highlight state -> HTML / table / stats for the UI

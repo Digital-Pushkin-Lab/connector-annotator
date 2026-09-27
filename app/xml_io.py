@@ -43,7 +43,9 @@ def build_xml(text: str, highlights: List[Highlight]) -> str:
         el.set("semfield1", _alternatives_str(node.get("semfield1", [])))
         el.set("semfield2", _set_str(node.get("semfield2", [])))
         el.set("pragmatics", _set_str(node.get("pragmatics", [])))
-        el.set("category", str(node.get("category", "")))
+        # Все коннекторы теперь относятся к одному типу; атрибут оставлен,
+        # чтобы формат XML не менялся.
+        el.set("category", "linker")
         el.set("source", str(node["source"]))
         surface = text[node["start"]:node["end"]]
         el.set("surface", surface)
@@ -108,7 +110,6 @@ def parse_xml_annotation(xml_text: str) -> Tuple[str, List[Highlight]]:
                 "semfield1": _normalize_alternatives(span.get("semfield1", "")),
                 "semfield2": _normalize_set(span.get("semfield2", "")),
                 "pragmatics": _normalize_set(span.get("pragmatics", "")),
-                "category": span.get("category", ""),
             })
             walk(span)
 

@@ -1,5 +1,5 @@
 """Static configuration: CSS, file paths, and the lookup tables loaded from
-linker_extraction/data/linkers.csv (semfields, pragmatics, category names)."""
+linker_extraction/data/linkers.csv (semfields, pragmatics)."""
 
 import os
 from typing import Dict, List, Set
@@ -55,13 +55,6 @@ CSS = """
 .manual:hover {
     background-color: rgba(100, 160, 230, 0.65) !important;
 }
-.intro {
-    background-color: rgba(120, 170, 90, 0.35) !important;
-    border-color: rgba(80, 130, 50, 0.5) !important;
-}
-.intro:hover {
-    background-color: rgba(120, 170, 90, 0.65) !important;
-}
 .scrollable-table {
     overflow-x: auto;
     border: 1px solid #e0e0e0;
@@ -96,7 +89,6 @@ CSS = """
 """
 
 LINKERS_CSV = os.path.join(PROJECT_ROOT, "linker_extraction", "data", "linkers.csv")
-INTRO_CSV = os.path.join(PROJECT_ROOT, "linker_extraction", "data", "intro_words.csv")
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -164,15 +156,3 @@ NO_SEMFIELD = "не выбрано"
 SEMFIELD1_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD1_CHOICES
 SEMFIELD2_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD2_CHOICES
 PRAGMATICS_CHOICES = [NO_SEMFIELD] + _RAW_PRAGMATICS_CHOICES
-
-CATEGORY_DISPLAY = {"linker": "линкер", "intro": "вводное слово"}
-CATEGORY_FROM_DISPLAY = {v: k for k, v in CATEGORY_DISPLAY.items()}
-CATEGORY_CHOICES = [NO_SEMFIELD] + list(CATEGORY_DISPLAY.values())
-
-
-def _category_display(category: str) -> str:
-    return CATEGORY_DISPLAY.get(category, NO_SEMFIELD)
-
-
-def _category_from_display(display: str) -> str:
-    return CATEGORY_FROM_DISPLAY.get(display, "")

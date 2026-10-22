@@ -1,15 +1,17 @@
 """Gradio interface for highlighting Russian linker words in text.
-(colab-compatible branch: same code as main, plus what Google Colab's
-Python 3.12 / current Gradio need -- see README.md.)
+(colab-compatible branch: same code as main, which runs on Python 3.8+
+and on Colab's Python 3.12; see README.md for running it on Colab.)
 
 Package layout:
   * config       -- CSS, file paths, semfield/pragmatics lookups
+  * labels       -- all interface captions (labels, hints, buttons, headings)
   * engine       -- linker_extraction setup (stanza pipeline, checker, patterns)
   * highlights   -- the highlight data model (create/validate/search/tree)
   * render       -- highlight state -> HTML / table / stats for the UI
   * xml_io       -- XML export and re-import of saved markup
   * file_io      -- loading .txt/.docx/.doc/.xml uploads
   * callbacks    -- Gradio event handlers (analyze/add/edit/delete)
+  * batch        -- batch folder processing (multiple files -> multiple XMLs)
   * ui           -- gr.Blocks layout wiring everything together
 """
 

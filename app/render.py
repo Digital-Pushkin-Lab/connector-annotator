@@ -6,6 +6,7 @@ from typing import Dict, List, Set
 
 import gradio as gr
 
+from . import labels
 from .highlights import (
     Highlight,
     _alternatives_display_value,
@@ -65,11 +66,11 @@ def build_html(text: str, highlights: List[Highlight]) -> str:
 def highlights_to_table(highlights: List[Highlight], text: str) -> str:
     """Render highlights as a Markdown table string."""
     if not highlights:
-        return "_Разметка отсутствует_"
+        return labels.TABLE_EMPTY
     rows = []
     rows.append(
-        "| id | start | end | название коннектора | основное значение | "
-        "сопроводительное значение | прагматическая установка | source | текст |"
+        f"| id | start | end | {labels.TABLE_HEADER_CONNECTOR_NAME} | {labels.SEMFIELD1.table_header} | "
+        f"{labels.SEMFIELD2.table_header} | {labels.PRAGMATICS.table_header} | source | {labels.TABLE_HEADER_TEXT} |"
     )
     rows.append("|---|---|---|---|---|---|---|---|---|")
     for h in sorted(highlights, key=lambda x: (x["start"], -x["end"])):
@@ -88,7 +89,7 @@ def compute_stats(highlights: List[Highlight]) -> str:
     semfield1 (primary meaning), semfield2 (accompanying meaning) and
     pragmatics."""
     if not highlights:
-        return "_Нет данных для статистики_"
+        return labels.STATS_EMPTY
 
     # Several highlight entries share one group_id when a connector is split
     # into multiple parts (e.g. "если" and "то" from "если...то"); count and
@@ -108,12 +109,12 @@ def compute_stats(highlights: List[Highlight]) -> str:
     total_connectors = len(roots)
 
     breakdowns = [
-        ("semfield1", "По основному значению (semfield1)"),
-        ("semfield2", "По сопроводительному значению (semfield2)"),
-        ("pragmatics", "По прагматической установке"),
+        ("semfield1", labels.SEMFIELD1.stats_heading),
+        ("semfield2", labels.SEMFIELD2.stats_heading),
+        ("pragmatics", labels.PRAGMATICS.stats_heading),
     ]
 
-    lines = [f"**Всего коннекторов:** {total_connectors}"]
+    lines = [f"**{labels.STATS_TOTAL}:** {total_connectors}"]
 
     for field, title in breakdowns:
         group_counts: Dict[str, int] = {}

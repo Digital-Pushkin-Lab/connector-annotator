@@ -17,18 +17,14 @@ import threading
 import zipfile
 from typing import List, Optional, Tuple
 
+from . import labels
 from .callbacks import build_highlights
 from .file_io import DOC_SUPPORT, read_doc_file, read_docx_file, read_text_file
 from .xml_io import build_xml
 
 SUPPORTED_EXTENSIONS = (".txt", ".docx", ".doc")
 
-BATCH_UPLOAD_LABEL = (
-    "Загрузите папку с файлами (.txt, .docx"
-    + (", .doc" if DOC_SUPPORT else "")
-    + ") — остальные форматы будут пропущены"
-    + ("" if DOC_SUPPORT else "; .doc не поддерживается на этом сервере (нет catdoc)")
-)
+BATCH_UPLOAD_LABEL = labels.BATCH_UPLOAD_WITH_DOC if DOC_SUPPORT else labels.BATCH_UPLOAD_WITHOUT_DOC
 
 # Points at the currently running process_folder()'s own Event (or None
 # when idle). A fresh Event per run -- rather than clearing one shared

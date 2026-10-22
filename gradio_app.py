@@ -3,8 +3,8 @@
 """
 Gradio interface for highlighting Russian linker words in text.
 
-This branch is the Google Colab (Python 3.12) variant of main: same code,
-plus Colab-specific fixes; see README.md for install/launch on Colab.
+This branch is the Google Colab (Python 3.12) variant of main: same code;
+see README.md for install/launch on Colab.
 
 Original features:
   * detection via linker_extraction (stanza dependency parsing +

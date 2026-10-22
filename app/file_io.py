@@ -10,6 +10,7 @@ from typing import List
 import gradio as gr
 from docx import Document as DocxDocument
 
+from . import labels
 from .highlights import Highlight
 from .render import render_state
 from .xml_io import parse_xml_annotation
@@ -36,12 +37,7 @@ def read_docx_file(path: str) -> str:
 DOC_SUPPORT = shutil.which("catdoc") is not None
 
 UPLOAD_FILE_TYPES = [".txt", ".docx", ".xml"] + ([".doc"] if DOC_SUPPORT else [])
-UPLOAD_LABEL = (
-    "Загрузить файл (.txt, .docx, .doc — текст; .xml — готовая разметка)"
-    if DOC_SUPPORT else
-    "Загрузить файл (.txt, .docx — текст; .xml — готовая разметка). "
-    ".doc не поддерживается на этом сервере (нет catdoc) — сохраните как .docx"
-)
+UPLOAD_LABEL = labels.UPLOAD_FILE_WITH_DOC if DOC_SUPPORT else labels.UPLOAD_FILE_WITHOUT_DOC
 
 
 def read_doc_file(path: str) -> str:

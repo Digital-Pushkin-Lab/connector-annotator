@@ -47,7 +47,7 @@ def analyze_text(text: str):
         return (
             '<div class="linker-container">Введите текст для анализа…</div>',
             "_Разметка отсутствует_",
-            gr.update(choices=[], value=""),
+            gr.update(choices=[], value=None),
             "_Нет данных для статистики_",
             text,
             [],

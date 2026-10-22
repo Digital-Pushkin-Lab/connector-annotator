@@ -6,6 +6,8 @@ from typing import Dict, List, Set
 
 import pandas as pd
 
+from .labels import NO_SEMFIELD  # re-exported: highlights.py / ui.py import it from here
+
 # gradio_app/ (the project root: contains linker_extraction/, requirements.txt, …)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -152,7 +154,6 @@ def load_linker_data(path: str):
     _RAW_PRAGMATICS_CHOICES,
 ) = load_linker_data(LINKERS_CSV)
 
-NO_SEMFIELD = "не выбрано"
 SEMFIELD1_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD1_CHOICES
 SEMFIELD2_CHOICES = [NO_SEMFIELD] + _RAW_SEMFIELD2_CHOICES
 PRAGMATICS_CHOICES = [NO_SEMFIELD] + _RAW_PRAGMATICS_CHOICES

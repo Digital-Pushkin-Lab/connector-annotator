@@ -1,7 +1,10 @@
 """Gradio Blocks layout: builds the UI and wires widgets to callbacks."""
 
+from typing import List
+
 import gradio as gr
 
+from . import labels
 from .batch import BATCH_UPLOAD_LABEL, _progress_html, process_folder, request_stop
 from .callbacks import (
     add_by_phrase,
@@ -22,6 +25,17 @@ from .file_io import UPLOAD_FILE_TYPES, UPLOAD_LABEL, load_file
 from .xml_io import save_xml
 
 
+def _meaning_dropdown(field: labels.FieldLabels, choices: List[str], editing: bool = False):
+    """Dropdown for one meaning field (semfield1 / semfield2 / pragmatics)."""
+    return gr.Dropdown(
+        label=field.label,
+        info=field.info_edit if editing else field.info,
+        choices=choices,
+        value=NO_SEMFIELD,
+        allow_custom_value=True,
+    )
+
+
 def build_single_text_tab():
     state_text = gr.State("")
     state_highlights = gr.State([])
@@ -29,8 +43,8 @@ def build_single_text_tab():
     with gr.Row():
         with gr.Column(scale=1):
             input_box = gr.Textbox(
-                label="Исходный текст",
-                placeholder="Введите текст здесь…",
+                label=labels.INPUT_TEXT,
+                placeholder=labels.INPUT_TEXT_PLACEHOLDER,
                 lines=10,
             )
             upload_file = gr.File(
@@ -38,94 +52,40 @@ def build_single_text_tab():
                 file_types=UPLOAD_FILE_TYPES,
                 type="filepath",
             )
-            analyze_btn = gr.Button("Анализировать", variant="primary")
+            analyze_btn = gr.Button(labels.ANALYZE_BUTTON, variant="primary")
 
-            gr.Markdown("### Добавить разметку")
+            gr.Markdown(labels.ADD_SECTION_HEADING)
             with gr.Tabs():
-                with gr.TabItem("По позициям"):
-                    add_start = gr.Number(label="Начало (символ)", precision=0, minimum=0)
-                    add_end = gr.Number(label="Конец (символ)", precision=0, minimum=0)
-                    add_label_pos = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
-                    add_semfield1_pos = gr.Dropdown(
-                        label="Основное значение (semfield1)",
-                        info="Альтернативы через «;» — можно оставить одну или несколько.",
-                        choices=SEMFIELD1_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_semfield2_pos = gr.Dropdown(
-                        label="Сопроводительное значение (облигаторное)",
-                        info="Набор через «,» — сопровождает основное значение.",
-                        choices=SEMFIELD2_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_pragmatics_pos = gr.Dropdown(
-                        label="Прагматическая установка (облигаторная)",
-                        info="Набор через «,».",
-                        choices=PRAGMATICS_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_pos_btn = gr.Button("Добавить разметку")
+                with gr.TabItem(labels.ADD_BY_POSITION_TAB):
+                    add_start = gr.Number(label=labels.ADD_START, precision=0, minimum=0)
+                    add_end = gr.Number(label=labels.ADD_END, precision=0, minimum=0)
+                    add_label_pos = gr.Textbox(label=labels.CONNECTOR_NAME, placeholder=labels.CONNECTOR_NAME_PLACEHOLDER)
+                    add_semfield1_pos = _meaning_dropdown(labels.SEMFIELD1, SEMFIELD1_CHOICES)
+                    add_semfield2_pos = _meaning_dropdown(labels.SEMFIELD2, SEMFIELD2_CHOICES)
+                    add_pragmatics_pos = _meaning_dropdown(labels.PRAGMATICS, PRAGMATICS_CHOICES)
+                    add_pos_btn = gr.Button(labels.ADD_BY_POSITION_BUTTON)
 
-                with gr.TabItem("По фразе"):
-                    add_phrase = gr.Textbox(label="Фраза", placeholder="Введите точную фразу из текста")
-                    add_label_phrase = gr.Textbox(label="Название коннектора", placeholder="например, если… то")
-                    add_semfield1_phrase = gr.Dropdown(
-                        label="Основное значение (semfield1)",
-                        info="Альтернативы через «;» — можно оставить одну или несколько.",
-                        choices=SEMFIELD1_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_semfield2_phrase = gr.Dropdown(
-                        label="Сопроводительное значение (облигаторное)",
-                        info="Набор через «,» — сопровождает основное значение.",
-                        choices=SEMFIELD2_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_pragmatics_phrase = gr.Dropdown(
-                        label="Прагматическая установка (облигаторная)",
-                        info="Набор через «,».",
-                        choices=PRAGMATICS_CHOICES,
-                        value=NO_SEMFIELD,
-                        allow_custom_value=True,
-                    )
-                    add_phrase_btn = gr.Button("Найти и добавить")
+                with gr.TabItem(labels.ADD_BY_PHRASE_TAB):
+                    add_phrase = gr.Textbox(label=labels.PHRASE, placeholder=labels.PHRASE_PLACEHOLDER)
+                    add_label_phrase = gr.Textbox(label=labels.CONNECTOR_NAME, placeholder=labels.CONNECTOR_NAME_PLACEHOLDER)
+                    add_semfield1_phrase = _meaning_dropdown(labels.SEMFIELD1, SEMFIELD1_CHOICES)
+                    add_semfield2_phrase = _meaning_dropdown(labels.SEMFIELD2, SEMFIELD2_CHOICES)
+                    add_pragmatics_phrase = _meaning_dropdown(labels.PRAGMATICS, PRAGMATICS_CHOICES)
+                    add_phrase_btn = gr.Button(labels.ADD_BY_PHRASE_BUTTON)
 
-            gr.Markdown("### Изменить или удалить")
-            hl_select = gr.Dropdown(label="Выбранная разметка", choices=[])
-            edit_start = gr.Number(label="Начало", precision=0, minimum=0)
-            edit_end = gr.Number(label="Конец", precision=0, minimum=0)
-            edit_label = gr.Textbox(label="Название коннектора")
-            edit_semfield1 = gr.Dropdown(
-                label="Основное значение (semfield1)",
-                info="Альтернативы через «;» — можно оставить одну или несколько.",
-                choices=SEMFIELD1_CHOICES,
-                value=NO_SEMFIELD,
-                allow_custom_value=True,
-            )
-            edit_semfield2 = gr.Dropdown(
-                label="Сопроводительное значение (облигаторное)",
-                info="Набор через «,» — сопровождает основное значение. Можно править вручную.",
-                choices=SEMFIELD2_CHOICES,
-                value=NO_SEMFIELD,
-                allow_custom_value=True,
-            )
-            edit_pragmatics = gr.Dropdown(
-                label="Прагматическая установка (облигаторная)",
-                info="Набор через «,». Можно править вручную.",
-                choices=PRAGMATICS_CHOICES,
-                value=NO_SEMFIELD,
-                allow_custom_value=True,
-            )
+            gr.Markdown(labels.EDIT_SECTION_HEADING)
+            hl_select = gr.Dropdown(label=labels.SELECTED_MARKUP, choices=[])
+            edit_start = gr.Number(label=labels.EDIT_START, precision=0, minimum=0)
+            edit_end = gr.Number(label=labels.EDIT_END, precision=0, minimum=0)
+            edit_label = gr.Textbox(label=labels.CONNECTOR_NAME)
+            edit_semfield1 = _meaning_dropdown(labels.SEMFIELD1, SEMFIELD1_CHOICES, editing=True)
+            edit_semfield2 = _meaning_dropdown(labels.SEMFIELD2, SEMFIELD2_CHOICES, editing=True)
+            edit_pragmatics = _meaning_dropdown(labels.PRAGMATICS, PRAGMATICS_CHOICES, editing=True)
             with gr.Row():
-                update_btn = gr.Button("Изменить границы / название / значения")
-                delete_btn = gr.Button("Удалить разметку", variant="stop")
+                update_btn = gr.Button(labels.UPDATE_BUTTON)
+                delete_btn = gr.Button(labels.DELETE_BUTTON, variant="stop")
 
-            save_btn = gr.Button("Сохранить разметку как XML", variant="secondary")
+            save_btn = gr.Button(labels.SAVE_XML_BUTTON, variant="secondary")
 
             gr.Examples(
                 examples=[
@@ -135,15 +95,15 @@ def build_single_text_tab():
                     ["Без сомненья, если ты придёшь, то я буду рад, но если нет — тоже хорошо."],
                 ],
                 inputs=input_box,
-                label="Примеры",
+                label=labels.EXAMPLES,
             )
 
         with gr.Column(scale=1):
-            output_html = gr.HTML(label="Размеченный текст")
-            output_table = gr.Markdown(label="Текущая разметка", elem_classes="scrollable-table")
-            output_stats = gr.Markdown(label="Статистика")
-            output_file = gr.File(label="XML-файл")
-            msg_box = gr.Textbox(label="Сообщения", interactive=False)
+            output_html = gr.HTML(label=labels.OUTPUT_HTML)
+            output_table = gr.Markdown(label=labels.OUTPUT_TABLE, elem_classes="scrollable-table")
+            output_stats = gr.Markdown(label=labels.OUTPUT_STATS)
+            output_file = gr.File(label=labels.OUTPUT_XML_FILE)
+            msg_box = gr.Textbox(label=labels.MESSAGES, interactive=False)
 
     # ---- wire events ----
     upload_file.upload(
@@ -205,12 +165,7 @@ def build_single_text_tab():
 
 
 def build_batch_tab():
-    gr.Markdown(
-        "Загрузите папку с текстами — каждый подходящий файл будет "
-        "проанализирован тем же алгоритмом, что и на вкладке «Разметка "
-        "текста», и превращён в отдельный XML-файл. Файлы других форматов "
-        "пропускаются."
-    )
+    gr.Markdown(labels.BATCH_INTRO)
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -220,25 +175,25 @@ def build_batch_tab():
                 type="filepath",
                 height=280,
             )
-            process_btn = gr.Button("Обработать папку", variant="primary")
+            process_btn = gr.Button(labels.PROCESS_FOLDER_BUTTON, variant="primary")
 
         with gr.Column(scale=1):
             with gr.Row():
-                progress_html = gr.HTML(_progress_html(0, 0, "Ожидание"))
-                stop_btn = gr.Button("Остановить", variant="stop", scale=0)
+                progress_html = gr.HTML(_progress_html(0, 0, labels.PROGRESS_IDLE))
+                stop_btn = gr.Button(labels.STOP_BUTTON, variant="stop", scale=0)
             with gr.Row(visible=False) as confirm_row:
-                gr.Markdown("Точно остановить обработку?")
-                confirm_stop_btn = gr.Button("Да, остановить", variant="stop", scale=0)
-                cancel_stop_btn = gr.Button("Нет", scale=0)
+                gr.Markdown(labels.STOP_CONFIRM_QUESTION)
+                confirm_stop_btn = gr.Button(labels.STOP_CONFIRM_YES, variant="stop", scale=0)
+                cancel_stop_btn = gr.Button(labels.STOP_CONFIRM_NO, scale=0)
             console_box = gr.Textbox(
-                label="Консоль",
+                label=labels.CONSOLE,
                 lines=18,
                 max_lines=30,
                 interactive=False,
                 autoscroll=True,
             )
-            batch_output_files = gr.File(label="Результаты (XML)", file_count="multiple", height=280)
-            batch_zip_file = gr.File(label="Скачать всё (ZIP)")
+            batch_output_files = gr.File(label=labels.BATCH_RESULT_FILES, file_count="multiple", height=280)
+            batch_zip_file = gr.File(label=labels.BATCH_ZIP_FILE)
 
     process_btn.click(
         fn=process_folder,
@@ -273,20 +228,15 @@ def build_batch_tab():
 
 
 def main():
-    with gr.Blocks(css=CSS, title="Аннотатор коннекторов") as demo:
-        gr.Markdown("# Аннотатор коннекторов")
+    with gr.Blocks(css=CSS, title=labels.APP_TITLE) as demo:
+        gr.Markdown(f"# {labels.APP_TITLE}")
 
         with gr.Tabs():
-            with gr.TabItem("Разметка текста"):
-                gr.Markdown(
-                    "Вставьте текст на русском языке и нажмите **Анализировать**. "
-                    "Найденные линкеры подсвечены оранжевым, "
-                    "ручная разметка — синим. "
-                    "Наведите курсор на фрагмент, чтобы увидеть название коннектора."
-                )
+            with gr.TabItem(labels.TAB_SINGLE_TEXT):
+                gr.Markdown(labels.SINGLE_TEXT_INTRO)
                 build_single_text_tab()
 
-            with gr.TabItem("Пакетная обработка"):
+            with gr.TabItem(labels.TAB_BATCH):
                 build_batch_tab()
 
     demo.launch(share=True)

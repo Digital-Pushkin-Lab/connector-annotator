@@ -2,12 +2,14 @@
 
 Package layout:
   * config       -- CSS, file paths, semfield/pragmatics lookups
+  * labels       -- all interface captions (labels, hints, buttons, headings)
   * engine       -- linker_extraction setup (stanza pipeline, checker, patterns)
   * highlights   -- the highlight data model (create/validate/search/tree)
   * render       -- highlight state -> HTML / table / stats for the UI
   * xml_io       -- XML export and re-import of saved markup
   * file_io      -- loading .txt/.docx/.doc/.xml uploads
   * callbacks    -- Gradio event handlers (analyze/add/edit/delete)
+  * batch        -- batch folder processing (multiple files -> multiple XMLs)
   * ui           -- gr.Blocks layout wiring everything together
 """
 

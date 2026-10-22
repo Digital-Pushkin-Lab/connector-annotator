@@ -1,6 +1,8 @@
 """Gradio event-handler callbacks: run analysis, and add/select/edit/delete
 highlights in response to UI actions."""
 
+from typing import List
+
 import gradio as gr
 
 from .config import PRAGMATICS_MAP, SEMFIELD1_MAP, SEMFIELD2_MAP
@@ -19,7 +21,7 @@ from .highlights import (
 from .render import render_state
 
 
-def build_highlights(text: str) -> list[Highlight]:
+def build_highlights(text: str) -> List[Highlight]:
     """Run the linker_extraction analysis pipeline over `text` and return
     the resulting highlights. Shared by the single-text UI flow and the
     batch-folder flow (app.batch) so both stay in sync."""
@@ -57,7 +59,7 @@ def analyze_text(text: str):
 
 
 def add_by_position(
-    text: str, highlights: list[Highlight], start, end, label: str,
+    text: str, highlights: List[Highlight], start, end, label: str,
     semfield1: str, semfield2: str, pragmatics: str,
 ):
     if not text:
@@ -87,7 +89,7 @@ def add_by_position(
 
 
 def add_by_phrase(
-    text: str, highlights: list[Highlight], phrase: str, label: str,
+    text: str, highlights: List[Highlight], phrase: str, label: str,
     semfield1: str, semfield2: str, pragmatics: str,
 ):
     if not text:
@@ -125,7 +127,7 @@ def add_by_phrase(
     return html, table, dropdown, stats, new_highlights, f"Добавлено разметок: {len(added_ids)}."
 
 
-def on_select_highlight(text: str, highlights: list[Highlight], choice: str):
+def on_select_highlight(text: str, highlights: List[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
         return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
@@ -139,7 +141,7 @@ def on_select_highlight(text: str, highlights: list[Highlight], choice: str):
 
 
 def update_highlight(
-    text: str, highlights: list[Highlight], choice: str, start, end, label: str,
+    text: str, highlights: List[Highlight], choice: str, start, end, label: str,
     semfield1: str, semfield2: str, pragmatics: str,
 ):
     hid = _selected_id_from_choice(choice)
@@ -186,7 +188,7 @@ def update_highlight(
     return html, table, dropdown, stats, new_highlights, "Разметка изменена."
 
 
-def delete_highlight(text: str, highlights: list[Highlight], choice: str):
+def delete_highlight(text: str, highlights: List[Highlight], choice: str):
     hid = _selected_id_from_choice(choice)
     if not hid:
         return (*render_state(text, highlights), highlights, "Выберите разметку для удаления.")

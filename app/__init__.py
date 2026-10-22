@@ -1,6 +1,6 @@
 """Gradio interface for highlighting Russian linker words in text.
-(colab-compatible branch: targets Python 3.9+ / Colab's Python 3.12.13,
-uses PEP 585 built-in generics instead of typing.List/Dict/Set/Tuple.)
+(colab-compatible branch: same code as main, plus what Google Colab's
+Python 3.12 / current Gradio need -- see README.md.)
 
 Package layout:
   * config       -- CSS, file paths, semfield/pragmatics lookups
@@ -10,7 +10,6 @@ Package layout:
   * xml_io       -- XML export and re-import of saved markup
   * file_io      -- loading .txt/.docx/.doc/.xml uploads
   * callbacks    -- Gradio event handlers (analyze/add/edit/delete)
-  * batch        -- batch folder processing (multiple files -> multiple XMLs)
   * ui           -- gr.Blocks layout wiring everything together
 """
 

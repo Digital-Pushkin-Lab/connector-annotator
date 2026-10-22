@@ -5,6 +5,7 @@ saved markup as-is."""
 import os
 import shutil
 import subprocess
+from typing import List
 
 import gradio as gr
 from docx import Document as DocxDocument
@@ -63,7 +64,7 @@ def read_doc_file(path: str) -> str:
     return result.stdout.decode("utf-8", "replace")
 
 
-def load_file(file_path: str, text: str, highlights: list[Highlight]):
+def load_file(file_path: str, text: str, highlights: List[Highlight]):
     """Handle uploading a file: .txt/.docx/.doc fill the input box with
     plain text (ready for "Анализировать"), .xml restores previously saved
     markup as-is."""

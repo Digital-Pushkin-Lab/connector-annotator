@@ -2,6 +2,8 @@
 markup, the Markdown table, breakdown statistics, and the combined
 render_state() bundle used after every edit."""
 
+from typing import Dict, List, Set
+
 import gradio as gr
 
 from .highlights import (
@@ -17,7 +19,7 @@ def escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-def build_html(text: str, highlights: list[Highlight]) -> str:
+def build_html(text: str, highlights: List[Highlight]) -> str:
     """Turn flat properly-nested highlights into HTML."""
     if not text:
         return '<div class="linker-container"></div>'
@@ -60,7 +62,7 @@ def build_html(text: str, highlights: list[Highlight]) -> str:
     return f'<div class="linker-container">{"".join(parts)}</div>'
 
 
-def highlights_to_table(highlights: list[Highlight], text: str) -> str:
+def highlights_to_table(highlights: List[Highlight], text: str) -> str:
     """Render highlights as a Markdown table string."""
     if not highlights:
         return "_Разметка отсутствует_"
@@ -81,7 +83,7 @@ def highlights_to_table(highlights: list[Highlight], text: str) -> str:
     return "\n".join(rows)
 
 
-def compute_stats(highlights: list[Highlight]) -> str:
+def compute_stats(highlights: List[Highlight]) -> str:
     """Return Markdown with connector statistics, broken down separately by
     semfield1 (primary meaning), semfield2 (accompanying meaning) and
     pragmatics."""
@@ -91,8 +93,8 @@ def compute_stats(highlights: list[Highlight]) -> str:
     # Several highlight entries share one group_id when a connector is split
     # into multiple parts (e.g. "если" and "то" from "если...то"); count and
     # break down each such connector once, not once per part.
-    seen_groups: set[str] = set()
-    unique_highlights: list[Highlight] = []
+    seen_groups: Set[str] = set()
+    unique_highlights: List[Highlight] = []
     for h in highlights:
         gid = h.get("group_id", h["id"])
         if gid in seen_groups:
@@ -114,7 +116,7 @@ def compute_stats(highlights: list[Highlight]) -> str:
     lines = [f"**Всего коннекторов:** {total_connectors}"]
 
     for field, title in breakdowns:
-        group_counts: dict[str, int] = {}
+        group_counts: Dict[str, int] = {}
         for root in roots:
             for sf in root.get(field, []):
                 group_counts[sf] = group_counts.get(sf, 0) + 1
@@ -126,7 +128,7 @@ def compute_stats(highlights: list[Highlight]) -> str:
     return "\n".join(lines)
 
 
-def render_state(text: str, highlights: list[Highlight], selected_id: str = ""):
+def render_state(text: str, highlights: List[Highlight], selected_id: str = ""):
     """Return updated HTML, table, dropdown, and stats for a given state."""
     html = build_html(text, highlights)
     table = highlights_to_table(highlights, text)

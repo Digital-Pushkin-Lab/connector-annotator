@@ -2,6 +2,7 @@
 linker_extraction/data/linkers.csv (semfields, pragmatics)."""
 
 import os
+from typing import Dict, List, Set
 
 import pandas as pd
 
@@ -105,12 +106,12 @@ def load_linker_data(path: str):
     """
     df = pd.read_csv(path, keep_default_na=False)
 
-    semfield1_map: dict[str, list[str]] = {}
-    semfield2_map: dict[str, list[str]] = {}
-    pragmatics_map: dict[str, list[str]] = {}
-    all_semfield1: set[str] = set()
-    all_semfield2: set[str] = set()
-    all_pragmatics: set[str] = set()
+    semfield1_map: Dict[str, List[str]] = {}
+    semfield2_map: Dict[str, List[str]] = {}
+    pragmatics_map: Dict[str, List[str]] = {}
+    all_semfield1: Set[str] = set()
+    all_semfield2: Set[str] = set()
+    all_pragmatics: Set[str] = set()
 
     for row in df.itertuples(index=False):
         key = str(row.linker).strip()

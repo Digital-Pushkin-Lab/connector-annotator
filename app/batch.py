@@ -11,12 +11,11 @@ found" mid-stream) once the browser reconnects. Polling a flag avoids that
 code path entirely and, as a bonus, lets a stopped run still finish
 cleanly -- log a proper message and zip whatever was already processed."""
 
-from __future__ import annotations
-
 import os
 import tempfile
 import threading
 import zipfile
+from typing import List, Optional, Tuple
 
 from .callbacks import build_highlights
 from .file_io import DOC_SUPPORT, read_doc_file, read_docx_file, read_text_file
@@ -37,7 +36,7 @@ BATCH_UPLOAD_LABEL = (
 # lands between "clear" and the loop's first check and gets wiped out.
 # Single global (not per-session): this app runs as one local, single-user
 # instance, so per-session tracking would be needless complexity.
-_current_stop_event: threading.Event | None = None
+_current_stop_event: Optional[threading.Event] = None
 
 
 def request_stop() -> None:
@@ -70,7 +69,7 @@ def _unique_output_path(out_dir: str, stem: str) -> str:
     return candidate
 
 
-def _build_zip(out_dir: str, output_files: list[str]) -> str:
+def _build_zip(out_dir: str, output_files: List[str]) -> str:
     zip_path = os.path.join(out_dir, "results.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in output_files:
@@ -86,7 +85,7 @@ def _progress_html(done: int, total: int, label: str) -> str:
     )
 
 
-def process_folder(file_paths: list[str]):
+def process_folder(file_paths: List[str]):
     """Generator: yields (log_text, output_files, zip_path, progress_html)
     after every file, so the console and progress bar update live even on
     a large folder. `zip_path` stays None until everything is done (or the
@@ -100,13 +99,13 @@ def process_folder(file_paths: list[str]):
         return
 
     out_dir = tempfile.mkdtemp(prefix="linker_batch_")
-    log_lines: list[str] = []
-    output_files: list[str] = []
+    log_lines: List[str] = []
+    output_files: List[str] = []
     processed = skipped = failed = 0
     total = len(file_paths)
     stopped = False
 
-    def emit(done: int, label: str = "Обработка") -> tuple[str, list[str], str | None, str]:
+    def emit(done: int, label: str = "Обработка") -> Tuple[str, List[str], Optional[str], str]:
         return "\n".join(log_lines), list(output_files), None, _progress_html(done, total, label)
 
     log_lines.append(f"Найдено файлов: {total}.")

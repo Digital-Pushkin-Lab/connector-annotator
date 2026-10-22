@@ -3,10 +3,11 @@ flat-list <-> containment-tree conversion (used for stats/XML export), and
 the small string helpers shared by the table/XML/UI-choice renderers."""
 
 import uuid
+from typing import Dict, List, Tuple
 
 from .config import NO_SEMFIELD
 
-Highlight = dict[str, object]
+Highlight = Dict[str, object]
 
 
 def make_highlight(
@@ -14,9 +15,9 @@ def make_highlight(
     end: int,
     label: str,
     source: str,
-    semfield1: list[str] = None,
-    semfield2: list[str] = None,
-    pragmatics: list[str] = None,
+    semfield1: List[str] = None,
+    semfield2: List[str] = None,
+    pragmatics: List[str] = None,
     group_id: str = None,
 ) -> Highlight:
     """`id` uniquely addresses this single span (used internally to select/
@@ -38,7 +39,7 @@ def make_highlight(
     }
 
 
-def validate_highlights(highlights: list[Highlight]) -> tuple[bool, str]:
+def validate_highlights(highlights: List[Highlight]) -> Tuple[bool, str]:
     """
     Ensure highlights are either nested or disjoint.
     Exact duplicates and partial overlaps are rejected.
@@ -62,7 +63,7 @@ def validate_highlights(highlights: list[Highlight]) -> tuple[bool, str]:
     return True, ""
 
 
-def find_phrase_positions(text: str, phrase: str) -> list[tuple[int, int]]:
+def find_phrase_positions(text: str, phrase: str) -> List[Tuple[int, int]]:
     """Return all case-insensitive occurrences of *phrase* in *text*."""
     if not phrase:
         return []
@@ -79,15 +80,15 @@ def find_phrase_positions(text: str, phrase: str) -> list[tuple[int, int]]:
     return positions
 
 
-def build_tree(highlights: list[Highlight]) -> list[Highlight]:
+def build_tree(highlights: List[Highlight]) -> List[Highlight]:
     """
     Convert a flat list of highlights into a nested tree structure
     based on span containment.  Highlights must already be valid
     (nested or disjoint).
     """
     sorted_hl = sorted(highlights, key=lambda h: (h["start"], -h["end"]))
-    roots: list[Highlight] = []
-    stack: list[Highlight] = []
+    roots: List[Highlight] = []
+    stack: List[Highlight] = []
 
     for h in sorted_hl:
         node: Highlight = {**h, "children": []}
@@ -102,33 +103,33 @@ def build_tree(highlights: list[Highlight]) -> list[Highlight]:
     return roots
 
 
-def _normalize_alternatives(raw: str) -> list[str]:
+def _normalize_alternatives(raw: str) -> List[str]:
     """Convert a raw semfield1 field value into a list of alternatives (';'-separated)."""
     if not raw or str(raw).strip() == NO_SEMFIELD:
         return []
     return [sf.strip() for sf in str(raw).split(";") if sf.strip() and sf.strip() != NO_SEMFIELD]
 
 
-def _normalize_set(raw: str) -> list[str]:
+def _normalize_set(raw: str) -> List[str]:
     """Convert a raw semfield2/pragmatics field value into a list (','-separated set)."""
     if not raw or str(raw).strip() == NO_SEMFIELD:
         return []
     return [sf.strip() for sf in str(raw).split(",") if sf.strip() and sf.strip() != NO_SEMFIELD]
 
 
-def _alternatives_str(values: list[str]) -> str:
+def _alternatives_str(values: List[str]) -> str:
     return "; ".join(values) if values else ""
 
 
-def _set_str(values: list[str]) -> str:
+def _set_str(values: List[str]) -> str:
     return ", ".join(values) if values else ""
 
 
-def _alternatives_display_value(values: list[str]) -> str:
+def _alternatives_display_value(values: List[str]) -> str:
     return "; ".join(values) if values else NO_SEMFIELD
 
 
-def _set_display_value(values: list[str]) -> str:
+def _set_display_value(values: List[str]) -> str:
     return ", ".join(values) if values else NO_SEMFIELD
 
 

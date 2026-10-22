@@ -5,6 +5,7 @@ import os
 import uuid
 import xml.dom.minidom
 from datetime import datetime
+from typing import List, Tuple
 from xml.etree import ElementTree as ET
 
 from .config import PROJECT_ROOT
@@ -19,7 +20,7 @@ from .highlights import (
 )
 
 
-def build_xml(text: str, highlights: list[Highlight]) -> str:
+def build_xml(text: str, highlights: List[Highlight]) -> str:
     """Serialize the markup to a pretty-printed XML string."""
     root = ET.Element("linker-annotation")
 
@@ -59,7 +60,7 @@ def build_xml(text: str, highlights: list[Highlight]) -> str:
     return reparsed.toprettyxml(indent="  ", encoding="UTF-8").decode("utf-8")
 
 
-def save_xml(text: str, highlights: list[Highlight]) -> tuple[str, str]:
+def save_xml(text: str, highlights: List[Highlight]) -> Tuple[str, str]:
     """Write the XML to a timestamped file and return its path."""
     if not text:
         return "", "Нет текста для сохранения."
@@ -71,7 +72,7 @@ def save_xml(text: str, highlights: list[Highlight]) -> tuple[str, str]:
     return path, f"Сохранено: {filename}"
 
 
-def parse_xml_annotation(xml_text: str) -> tuple[str, list[Highlight]]:
+def parse_xml_annotation(xml_text: str) -> Tuple[str, List[Highlight]]:
     """Parse an XML document produced by `build_xml` (or matching its
     schema) back into (text, highlights), so previously saved markup can be
     reloaded and further edited. All parts of one saved connector share the
@@ -90,7 +91,7 @@ def parse_xml_annotation(xml_text: str) -> tuple[str, list[Highlight]]:
         raise ValueError("В файле отсутствует тег <text> с исходным текстом.")
     text = text_el.text or ""
 
-    highlights: list[Highlight] = []
+    highlights: List[Highlight] = []
 
     def walk(container: ET.Element) -> None:
         for span in container.findall("span"):

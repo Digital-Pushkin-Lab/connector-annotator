@@ -6,7 +6,7 @@ Gradio interface for highlighting Russian linker words in text.
 Original features:
   * detection via linker_extraction (stanza dependency parsing +
     rule-based scoring); semfields/pragmatics looked up from
-    linker_extraction/data/linkers.csv, keyed by matched surface form
+    linker_extraction/data/linkers.tsv, keyed by matched surface form
   * atoms of a matched linker are highlighted as nested spans
 
 Expanded features:

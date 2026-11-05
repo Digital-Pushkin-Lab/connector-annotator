@@ -6,7 +6,7 @@ from typing import List
 import gradio as gr
 
 from .config import PRAGMATICS_MAP, SEMFIELD1_MAP, SEMFIELD2_MAP
-from .engine import CHECKER, NLP, PATTERNS_BY_TYPE, dedupe_spans, extract_spans, parse_sentences
+from .engine import CHECKER, ENGINE, PATTERNS_BY_TYPE, dedupe_spans, extract_spans
 from .highlights import (
     Highlight,
     _alternatives_display_value,
@@ -25,7 +25,7 @@ def build_highlights(text: str) -> List[Highlight]:
     """Run the linker_extraction analysis pipeline over `text` and return
     the resulting highlights. Shared by the single-text UI flow and the
     batch-folder flow (app.batch) so both stay in sync."""
-    parsed_sentences, _word_count = parse_sentences(text, NLP)
+    parsed_sentences, _word_count = ENGINE.parse_sentences(text)
     spans = extract_spans(parsed_sentences, CHECKER, PATTERNS_BY_TYPE)
     spans = dedupe_spans(spans)
     return [

@@ -1,5 +1,5 @@
 """Static configuration: CSS, file paths, and the lookup tables loaded from
-linker_extraction/data/linkers.csv (semfields, pragmatics)."""
+linker_extraction/data/linkers.tsv (semfields, pragmatics)."""
 
 import os
 from typing import Dict, List, Set
@@ -90,7 +90,7 @@ CSS = """
 }
 """
 
-LINKERS_CSV = os.path.join(PROJECT_ROOT, "linker_extraction", "data", "linkers.csv")
+LINKERS_CSV = os.path.join(PROJECT_ROOT, "linker_extraction", "data", "linkers.tsv")
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -98,7 +98,7 @@ LINKERS_CSV = os.path.join(PROJECT_ROOT, "linker_extraction", "data", "linkers.c
 
 def load_linker_data(path: str):
     """
-    Load linker_extraction/data/linkers.csv and return, keyed by the
+    Load linker_extraction/data/linkers.tsv and return, keyed by the
     `linker` column (the same surface-string convention -- "..." for
     discontinuous connectors -- that `matching.pattern_surface` reconstructs
     for linker_extraction's matches):
@@ -106,7 +106,7 @@ def load_linker_data(path: str):
       - semfield2_map:    linker -> list of obligatory accompanying meanings (','-separated)
       - pragmatics_map:   linker -> list of obligatory pragmatic meanings (','-separated)
     """
-    df = pd.read_csv(path, keep_default_na=False)
+    df = pd.read_csv(path, sep="\t", keep_default_na=False)
 
     semfield1_map: Dict[str, List[str]] = {}
     semfield2_map: Dict[str, List[str]] = {}
